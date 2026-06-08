@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>meal-kiosk-cloud</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f4f7fb; --surface:#fff; --surface2:#eef3fb; --text:#142033; --muted:#66758a; --border:#d7e0eb;
+      --primary:#0a6bcb; --primary2:#08539d; --success:#1b7f52; --warn:#9e6a00; --danger:#c83a2d;
+      --radius:18px; --shadow:0 12px 32px rgba(15,23,42,.08);
+    }
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:linear-gradient(180deg,#f8fbff 0%,#eff4fb 100%);color:var(--text)}
+    button,input,select,textarea{font:inherit} a{color:var(--primary)}
+    .app{display:grid;grid-template-columns:1.2fr .95fr;gap:20px;min-height:100vh;padding:20px}
+    .panel{background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);backdrop-filter:blur(10px)}
+    .left,.right{padding:18px}.header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+    .brand{display:flex;gap:12px;align-items:center}.logo{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,var(--primary),#49aaff);color:#fff;font-weight:800;box-shadow:0 10px 24px rgba(10,107,203,.24)}
+    .title{font-size:24px;font-weight:800}.subtitle{font-size:14px;color:var(--muted)}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px}.section-title{font-size:17px;font-weight:800;margin-bottom:10px}
+    .video-wrap{position:relative;overflow:hidden;border-radius:18px;background:#0d1520;border:1px solid #233245;aspect-ratio:16/10}
+    video,canvas.preview{width:100%;height:100%;object-fit:cover;display:block}.camera-overlay{position:absolute;inset:18px;border:2px dashed rgba(255,255,255,.36);border-radius:18px;pointer-events:none}
+    .toolbar,.meal-buttons,.filters,.form-grid,.row,.tabs{display:flex;gap:10px;flex-wrap:wrap}.toolbar{margin:14px 0}
+    .btn{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:14px;padding:12px 14px;cursor:pointer;min-height:46px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+    .btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}.btn-primary:hover{background:var(--primary2)}.btn-success{background:var(--success);color:#fff;border-color:var(--success)}.btn-warning{background:#fff7e8;color:var(--warn);border-color:#f2d9a6}.btn-danger{background:#fff1ef;color:var(--danger);border-color:#f0c2bc}
+    .meal-buttons .btn{flex:1;font-size:18px;padding:16px 14px} label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:600}
+    input,select,textarea{width:100%;min-height:44px;border-radius:12px;border:1px solid var(--border);padding:10px 12px;background:#fff} textarea{min-height:90px;resize:vertical}
+    .form-grid>div{flex:1 1 180px}.hint,.status,.mini{color:var(--muted)} .status{min-height:22px;margin-top:10px;font-weight:600}.ok{color:var(--success)}.warn{color:var(--warn)}.err{color:var(--danger)}
+    .employee-card{display:grid;grid-template-columns:92px 1fr;gap:14px;align-items:center}.avatar{width:92px;height:92px;border-radius:16px;object-fit:cover;border:1px solid var(--border);background:var(--surface2)}
+    .meta strong{font-size:20px;display:block;margin-bottom:6px}.right{display:flex;flex-direction:column;gap:14px} .hidden{display:none!important}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{padding:12px;border:1px solid var(--border);border-radius:14px;background:#fff}.stat .n{font-size:24px;font-weight:800}
+    .table-wrap{max-height:360px;overflow:auto} table{width:100%;border-collapse:collapse;font-size:14px} th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top} th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+    .badge{display:inline-flex;align-items:center;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700}.b-breakfast{background:#edf5ff;color:#0a6bcb}.b-lunch{background:#eefbf3;color:#1b7f52}.b-dinner{background:#fff7e8;color:#9e6a00}
+    .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#f7f9fc;padding:10px 12px;border:1px solid var(--border);border-radius:12px;white-space:pre-wrap;word-break:break-word}
+    @media (max-width:1100px){.app{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}} @media (max-width:640px){.employee-card{grid-template-columns:1fr}.stats{grid-template-columns:1fr}.meal-buttons{flex-direction:column}.tabs .btn,.toolbar .btn{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel left">
+      <div class="header">
+        <div class="brand"><div class="logo">MP</div><div><div class="title">Учет питания персонала</div><div class="subtitle">GitHub/Render версия с Google Sheets через Apps Script</div></div></div>
+        <button class="btn" id="themeBtn">Тема</button>
+      </div>
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="section-title">Настройки подключения</div>
+        <div class="form-grid">
+          <div style="flex:1 1 100%;">
+            <label for="apiBase">URL Google Apps Script Web App</label>
+            <input id="apiBase" placeholder="https://script.google.com/macros/s/ВАШ_DEPLOYMENT_ID/exec" />
+          </div>
+          <div>
+            <label for="siteName">Название точки</label>
+            <input id="siteName" placeholder="Например: Столовая 1" />
+          </div>
+          <div>
+            <label for="operatorName">Оператор</label>
+            <input id="operatorName" placeholder="Например: Администратор столовой" />
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-primary" id="saveConfigBtn">Сохранить настройки</button>
+          <button class="btn" id="testApiBtn">Проверить API</button>
+          <button class="btn" id="syncBtn">Обновить данные</button>
+        </div>
+        <div class="status" id="statusLine">Заполните URL Apps Script и сохраните настройки.</div>
+      </div>
+
+      <div class="video-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas class="preview hidden" id="captureCanvas"></canvas>
+        <div class="camera-overlay"></div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn btn-primary" id="startCameraBtn">Включить камеру</button>
+        <button class="btn" id="captureBtn">Сделать фото</button>
+        <button class="btn" id="clearPhotoBtn">Очистить фото</button>
+      </div>
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="section-title">Сотрудник</div>
+        <div class="form-grid">
+          <div>
+            <label for="employeeSearch">Поиск сотрудника</label>
+            <input id="employeeSearch" list="employeeList" placeholder="Введите ФИО, ID или подразделение" />
+            <datalist id="employeeList"></datalist>
+          </div>
+          <div>
+            <label for="employeeSelect">Быстрый выбор</label>
+            <select id="employeeSelect"><option value="">Выберите сотрудника</option></select>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="btn" id="newEmployeeBtn">Новый сотрудник</button>
+          <button class="btn" id="saveEmployeeBtn">Сохранить сотрудника в Google Sheets</button>
+        </div>
+        <div class="employee-card card" style="margin-top:8px;">
+          <img id="employeePhoto" class="avatar" alt="Фото сотрудника" />
+          <div class="meta">
+            <strong id="employeeName">Сотрудник не выбран</strong>
+            <div class="hint" id="employeeInfo">Загрузите сотрудников из Google Sheets или создайте нового.</div>
+            <div class="mini" id="employeeLastMeal">Последнее питание: —</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="section-title">Регистрация питания</div>
+        <div class="meal-buttons">
+          <button class="btn btn-primary" data-meal="Завтрак">Завтрак</button>
+          <button class="btn btn-success" data-meal="Обед">Обед</button>
+          <button class="btn btn-warning" data-meal="Ужин">Ужин</button>
+        </div>
+      </div>
+
+      <div class="card hidden" id="employeeEditor">
+        <div class="section-title">Карточка сотрудника</div>
+        <div class="form-grid">
+          <div><label for="empName">ФИО</label><input id="empName" /></div>
+          <div><label for="empId">Табельный номер / ID</label><input id="empId" /></div>
+          <div><label for="empDept">Подразделение</label><input id="empDept" /></div>
+          <div><label for="empPos">Должность</label><input id="empPos" /></div>
+        </div>
+        <div class="mini" style="margin-top:10px;">Фото с камеры будет сохранено в карточку сотрудника и может использоваться для фиксации факта обслуживания.</div>
+      </div>
+    </section>
+
+    <aside class="panel right">
+      <div class="tabs">
+        <button class="btn btn-primary" data-tab="journal">Журнал</button>
+        <button class="btn" data-tab="employees">Сотрудники</button>
+        <button class="btn" data-tab="reports">Отчеты</button>
+        <button class="btn" data-tab="setup">Настройка</button>
+        <button class="btn" id="exportBtn">Экспорт CSV</button>
+      </div>
+
+      <section id="tab-journal">
+        <div class="card">
+          <div class="section-title">Фильтры</div>
+          <div class="filters">
+            <div style="flex:1 1 180px;"><label for="filterText">Сотрудник / ID</label><input id="filterText" placeholder="Поиск" /></div>
+            <div style="flex:1 1 160px;"><label for="filterDate">Дата</label><input id="filterDate" type="date" /></div>
+            <div style="flex:1 1 150px;"><label for="filterMeal">Тип питания</label><select id="filterMeal"><option value="">Все</option><option>Завтрак</option><option>Обед</option><option>Ужин</option></select></div>
+            <div style="display:flex;align-items:end;"><button class="btn" id="resetFiltersBtn">Сбросить</button></div>
+          </div>
+        </div>
+        <div class="stats" style="margin-top:14px;">
+          <div class="stat"><div class="mini">Всего записей</div><div class="n" id="statTotal">0</div></div>
+          <div class="stat"><div class="mini">Завтраков</div><div class="n" id="statBreakfast">0</div></div>
+          <div class="stat"><div class="mini">Обедов</div><div class="n" id="statLunch">0</div></div>
+          <div class="stat"><div class="mini">Ужинов</div><div class="n" id="statDinner">0</div></div>
+        </div>
+        <div class="card" style="margin-top:14px;">
+          <div class="section-title">История выдачи питания</div>
+          <div class="table-wrap"><table><thead><tr><th>Дата/время</th><th>Сотрудник</th><th>Подразделение</th><th>Питание</th><th>Точка</th><th>Оператор</th><th>Фото</th></tr></thead><tbody id="journalBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="tab-employees" class="hidden">
+        <div class="card">
+          <div class="section-title">Список сотрудников</div>
+          <div class="table-wrap"><table><thead><tr><th>Фото</th><th>ФИО</th><th>ID</th><th>Подразделение</th><th>Должность</th><th></th></tr></thead><tbody id="employeesBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="tab-reports" class="hidden">
+        <div class="card">
+          <div class="section-title">Сводка</div>
+          <div class="filters">
+            <div><label for="reportDateFrom">С даты</label><input id="reportDateFrom" type="date" /></div>
+            <div><label for="reportDateTo">По дату</label><input id="reportDateTo" type="date" /></div>
+            <div><label for="reportDept">Подразделение</label><input id="reportDept" placeholder="Все подразделения" /></div>
+            <div style="display:flex;align-items:end;"><button class="btn btn-primary" id="buildReportBtn">Сформировать</button></div>
+          </div>
+          <div id="reportContent" style="margin-top:14px;"></div>
+        </div>
+      </section>
+
+      <section id="tab-setup" class="hidden">
+        <div class="card">
+          <div class="section-title">Что должно быть в Google Sheets</div>
+          <p class="mini">Создайте таблицу Google Sheets с листами <strong>Employees</strong> и <strong>Meals</strong>. Доступ к записи и чтению будет выполнять Google Apps Script Web App.</p>
+          <div class="code">Employees:
+employeeId | fullName | staffId | department | position | photo | active | createdAt | updatedAt
+
+Meals:
+mealId | timestamp | date | time | employeeId | employeeName | staffId | department | mealType | siteName | operator | photo</div>
+          <p class="mini" style="margin-top:10px;">Apps Script должен поддерживать действия: ping, listEmployees, saveEmployee, listMeals, saveMeal, report.</p>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <script>
+    const SETTINGS_KEY = 'meal_kiosk_cloud_settings_v1';
+    const state = { employees: [], meals: [], selectedEmployeeId: null, capturedPhoto: null, stream: null, activeTab: 'journal' };
+    const els = {
+      apiBase: document.getElementById('apiBase'), siteName: document.getElementById('siteName'), operatorName: document.getElementById('operatorName'), statusLine: document.getElementById('statusLine'),
+      video: document.getElementById('video'), captureCanvas: document.getElementById('captureCanvas'), employeeSearch: document.getElementById('employeeSearch'), employeeList: document.getElementById('employeeList'), employeeSelect: document.getElementById('employeeSelect'),
+      employeeName: document.getElementById('employeeName'), employeeInfo: document.getElementById('employeeInfo'), employeePhoto: document.getElementById('employeePhoto'), employeeLastMeal: document.getElementById('employeeLastMeal'),
+      employeeEditor: document.getElementById('employeeEditor'), empName: document.getElementById('empName'), empId: document.getElementById('empId'), empDept: document.getElementById('empDept'), empPos: document.getElementById('empPos'),
+      journalBody: document.getElementById('journalBody'), employeesBody: document.getElementById('employeesBody'), filterText: document.getElementById('filterText'), filterDate: document.getElementById('filterDate'), filterMeal: document.getElementById('filterMeal'),
+      statTotal: document.getElementById('statTotal'), statBreakfast: document.getElementById('statBreakfast'), statLunch: document.getElementById('statLunch'), statDinner: document.getElementById('statDinner'),
+      reportDateFrom: document.getElementById('reportDateFrom'), reportDateTo: document.getElementById('reportDateTo'), reportDept: document.getElementById('reportDept'), reportContent: document.getElementById('reportContent')
+    };
+
+    function generateUUID() {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+      return 'id_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    }
+
+    function saveSettings(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify({ apiBase: els.apiBase.value.trim(), siteName: els.siteName.value.trim(), operatorName: els.operatorName.value.trim() })); }
+    function loadSettings(){ try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); els.apiBase.value = s.apiBase || ''; els.siteName.value = s.siteName || ''; els.operatorName.value = s.operatorName || ''; } catch {} }
+    function setStatus(text, cls=''){ els.statusLine.textContent = text; els.statusLine.className = 'status' + (cls ? ' ' + cls : ''); }
+    function apiUrl(action){ const base = els.apiBase.value.trim(); if(!base) throw new Error('Не указан URL Apps Script'); return base + (base.includes('?') ? '&' : '?') + 'action=' + encodeURIComponent(action); }
+    async function apiGet(action, params={}){ const url = new URL(apiUrl(action)); Object.entries(params).forEach(([k,v])=>{ if(v!==undefined && v!==null && v!=='') url.searchParams.set(k,v); }); const res = await fetch(url.toString()); if(!res.ok) throw new Error('Ошибка запроса'); return await res.json(); }
+    async function apiPost(action, payload){ const res = await fetch(apiUrl(action), { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify(payload) }); if(!res.ok) throw new Error('Ошибка отправки'); return await res.json(); }
+
+    async function testApi(){ try{ const data = await apiGet('ping'); if(data.ok || data.status === 'success' || data.message === 'pong') setStatus('API доступен и отвечает.', 'ok'); else setStatus('API отвечает, но вернул ошибку.', 'warn'); } catch(e){ setStatus('Проверка API не выполнена: ' + e.message, 'err'); } }
+    async function syncData(){ try{ setStatus('Обновление данных...', ''); const [emp, meals] = await Promise.all([apiGet('listEmployees'), apiGet('listMeals', { limit: 500 })]); state.employees = Array.isArray(emp) ? emp : (emp.items || []); state.meals = Array.isArray(meals) ? meals : (meals.items || []); renderAll(); setStatus('Данные успешно загружены из Google Sheets.', 'ok'); } catch(e){ setStatus('Не удалось загрузить данные: ' + e.message, 'err'); } }
+
+    async function saveEmployeeRemote(){
+      const fullName = els.empName.value.trim(); if(!fullName){ setStatus('Введите ФИО сотрудника.', 'warn'); return; }
+      const payload = { employeeId: state.selectedEmployeeId || generateUUID(), fullName, staffId: els.empId.value.trim(), department: els.empDept.value.trim(), position: els.empPos.value.trim(), photo: state.capturedPhoto || getSelectedEmployee()?.photo || '', active: true };
+      try {
+        const data = await apiPost('saveEmployee', payload);
+        if(data.ok === false || data.status === 'error') throw new Error(data.message || 'Сохранение не выполнено');
+        setStatus('Сотрудник сохранен в Google Sheets.', 'ok');
+        state.selectedEmployeeId = payload.employeeId;
+        await syncData();
+      } catch(e){ setStatus('Ошибка сохранения сотрудника: ' + e.message, 'err'); }
+    }
+
+    async function registerMeal(mealType){
+      const emp = getSelectedEmployee(); if(!emp){ setStatus('Сначала выберите сотрудника.', 'warn'); return; }
+      const now = new Date();
+      const payload = {
+        mealId: generateUUID(), timestamp: now.toISOString(), date: now.toISOString().slice(0,10), time: now.toLocaleTimeString('ru-RU'), employeeId: emp.employeeId || emp.id, employeeName: emp.fullName, staffId: emp.staffId || '', department: emp.department || '', mealType,
+        siteName: els.siteName.value.trim(), operator: els.operatorName.value.trim(), photo: state.capturedPhoto || emp.photo || ''
+      };
+      try {
+        const data = await apiPost('saveMeal', payload);
+        if(data.ok === false || data.status === 'error') throw new Error(data.message || 'Регистрация не выполнена');
+        setStatus(`Зарегистрировано: ${emp.fullName} — ${mealType}.`, 'ok');
+        await syncData();
+      } catch(e){ setStatus('Ошибка регистрации питания: ' + e.message, 'err'); }
+    }
+
+    async function startCamera(){ try{ if(state.stream) stopCamera(); const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ideal:1280}, height:{ideal:720} }, audio:false }); state.stream = stream; els.video.srcObject = stream; setStatus('Камера включена.', 'ok'); } catch(e){ setStatus('Не удалось включить камеру. Проверьте разрешения браузера.', 'err'); } }
+    function stopCamera(){ if(!state.stream) return; state.stream.getTracks().forEach(t=>t.stop()); state.stream = null; }
+    function capturePhoto(){ const video = els.video; if(!video.videoWidth){ setStatus('Сначала включите камеру.', 'warn'); return; } const c = els.captureCanvas; c.width = video.videoWidth; c.height = video.videoHeight; c.getContext('2d').drawImage(video,0,0,c.width,c.height); state.capturedPhoto = c.toDataURL('image/jpeg', .85); els.employeePhoto.src = state.capturedPhoto; els.employeePhoto.style.visibility = 'visible'; setStatus('Фото снято.', 'ok'); }
+    function clearPhoto(){ state.capturedPhoto = null; renderSelectedEmployee(); setStatus('Фото очищено.', ''); }
+
+    function getSelectedEmployee(){ return state.employees.find(e => (e.employeeId || e.id) === state.selectedEmployeeId) || null; }
+    function selectEmployee(id){ state.selectedEmployeeId = id; const emp = getSelectedEmployee(); els.employeeSearch.value = emp ? emp.fullName : ''; els.employeeSelect.value = id || ''; els.employeeEditor.classList.remove('hidden'); renderSelectedEmployee(); }
+    window.selectEmployee = selectEmployee;
+    function openNewEmployee(){ state.selectedEmployeeId = null; els.employeeEditor.classList.remove('hidden'); els.empName.value=''; els.empId.value=''; els.empDept.value=''; els.empPos.value=''; els.employeeSearch.value=''; els.employeeSelect.value=''; renderSelectedEmployee(); setStatus('Заполните карточку нового сотрудника.', ''); }
+
+    function renderEmployeeOptions(){
+      els.employeeList.innerHTML = state.employees.map(emp => `<option value="${escapeHtml(emp.fullName)}"></option>`).join('');
+      els.employeeSelect.innerHTML = '<option value="">Выберите сотрудника</option>' + state.employees.map(emp => `<option value="${escapeHtml(emp.employeeId || emp.id)}">${escapeHtml(emp.fullName)}${emp.staffId ? ' — ' + escapeHtml(emp.staffId) : ''}</option>`).join('');
+      els.employeesBody.innerHTML = state.employees.map(emp => `
+        <tr>
+          <td>${emp.photo ? `<img src="${emp.photo}" alt="${escapeHtml(emp.fullName)}" style="width:46px;height:46px;border-radius:12px;object-fit:cover;">` : '—'}</td>
+          <td>${escapeHtml(emp.fullName || '')}</td><td>${escapeHtml(emp.staffId || '')}</td><td>${escapeHtml(emp.department || '')}</td><td>${escapeHtml(emp.position || '')}</td>
+          <td><button class="btn" onclick="selectEmployee('${emp.employeeId || emp.id}')">Открыть</button></td>
+        </tr>`).join('');
+    }
+    function badgeClass(meal){ if(meal==='Завтрак') return 'b-breakfast'; if(meal==='Обед') return 'b-lunch'; return 'b-dinner'; }
+    function renderSelectedEmployee(){ const emp = getSelectedEmployee(); if(!emp){ els.employeeName.textContent='Сотрудник не выбран'; els.employeeInfo.textContent='Загрузите сотрудников из Google Sheets или создайте нового.'; els.employeePhoto.src = state.capturedPhoto || ''; els.employeePhoto.style.visibility = state.capturedPhoto ? 'visible' : 'hidden'; els.employeeLastMeal.textContent='Последнее питание: —'; return; } els.employeeName.textContent = emp.fullName || ''; els.employeeInfo.textContent = `${emp.staffId || 'Без ID'} • ${emp.department || 'Без подразделения'} • ${emp.position || 'Без должности'}`; els.employeePhoto.src = state.capturedPhoto || emp.photo || ''; els.employeePhoto.style.visibility = (state.capturedPhoto || emp.photo) ? 'visible' : 'hidden'; const last = [...state.meals].filter(m => (m.employeeId === (emp.employeeId||emp.id))).sort((a,b)=> String(b.timestamp).localeCompare(String(a.timestamp)))[0]; els.employeeLastMeal.textContent = 'Последнее питание: ' + (last ? `${last.mealType}, ${formatDateTime(last.timestamp)}` : '—'); els.empName.value = emp.fullName || ''; els.empId.value = emp.staffId || ''; els.empDept.value = emp.department || ''; els.empPos.value = emp.position || ''; }
+    function filteredMeals(){ const text = els.filterText.value.trim().toLowerCase(); const date = els.filterDate.value; const meal = els.filterMeal.value; return [...state.meals].filter(item => { const okText = !text || [item.employeeName,item.staffId,item.department].join(' ').toLowerCase().includes(text); const okDate = !date || String(item.date || item.timestamp?.slice(0,10)) === date; const okMeal = !meal || item.mealType === meal; return okText && okDate && okMeal; }).sort((a,b)=> String(b.timestamp).localeCompare(String(a.timestamp))); }
+    function renderJournal(){ const rows = filteredMeals(); els.journalBody.innerHTML = rows.map(row => `<tr><td>${formatDateTime(row.timestamp)}</td><td><strong>${escapeHtml(row.employeeName || '')}</strong><div class="mini">${escapeHtml(row.staffId || '')}</div></td><td>${escapeHtml(row.department || '')}</td><td><span class="badge ${badgeClass(row.mealType)}">${escapeHtml(row.mealType || '')}</span></td><td>${escapeHtml(row.siteName || '')}</td><td>${escapeHtml(row.operator || '')}</td><td>${row.photo ? `<a href="${row.photo}" target="_blank" rel="noopener noreferrer">Открыть</a>` : '—'}</td></tr>`).join(''); els.statTotal.textContent = rows.length; els.statBreakfast.textContent = rows.filter(x=>x.mealType==='Завтрак').length; els.statLunch.textContent = rows.filter(x=>x.mealType==='Обед').length; els.statDinner.textContent = rows.filter(x=>x.mealType==='Ужин').length; }
+    function buildReport(){ const from = els.reportDateFrom.value; const to = els.reportDateTo.value; const deptText = els.reportDept.value.trim().toLowerCase(); let rows = [...state.meals]; if(from) rows = rows.filter(r => String(r.date || r.timestamp?.slice(0,10)) >= from); if(to) rows = rows.filter(r => String(r.date || r.timestamp?.slice(0,10)) <= to); if(deptText) rows = rows.filter(r => String(r.department || '').toLowerCase().includes(deptText)); const byDept = {}; rows.forEach(r => { const key = r.department || 'Без подразделения'; if(!byDept[key]) byDept[key] = { total:0, breakfast:0, lunch:0, dinner:0 }; byDept[key].total += 1; if(r.mealType==='Завтрак') byDept[key].breakfast += 1; if(r.mealType==='Обед') byDept[key].lunch += 1; if(r.mealType==='Ужин') byDept[key].dinner += 1; }); const summary = `<div class="stats"><div class="stat"><div class="mini">Всего</div><div class="n">${rows.length}</div></div><div class="stat"><div class="mini">Завтраков</div><div class="n">${rows.filter(r=>r.mealType==='Завтрак').length}</div></div><div class="stat"><div class="mini">Обедов</div><div class="n">${rows.filter(r=>r.mealType==='Обед').length}</div></div><div class="stat"><div class="mini">Ужинов</div><div class="n">${rows.filter(r=>r.mealType==='Ужин').length}</div></div></div>`; const table = Object.entries(byDept).map(([dept,v]) => `<tr><td>${escapeHtml(dept)}</td><td>${v.total}</td><td>${v.breakfast}</td><td>${v.lunch}</td><td>${v.dinner}</td></tr>`).join(''); els.reportContent.innerHTML = summary + `<div class="table-wrap" style="margin-top:14px;"><table><thead><tr><th>Подразделение</th><th>Всего</th><th>Завтрак</th><th>Обед</th><th>Ужин</th></tr></thead><tbody>${table || '<tr><td colspan="5">Нет данных за выбранный период.</td></tr>'}</tbody></table></div>`; }
+    function exportCSV(){ const rows = filteredMeals(); const header = ['Дата','Время','ФИО','ID','Подразделение','Тип питания','Точка','Оператор']; const data = rows.map(r => [String(r.date || ''), String(r.time || new Date(r.timestamp).toLocaleTimeString('ru-RU')), r.employeeName || '', r.staffId || '', r.department || '', r.mealType || '', r.siteName || '', r.operator || '']); downloadFile([header, ...data].map(row => row.map(csvEscape).join(';')).join('\n'), `meal-journal-${new Date().toISOString().slice(0,10)}.csv`, 'text/csv;charset=utf-8;'); }
+    function downloadFile(content, filename, mime){ const blob = new Blob([content], { type: mime }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
+    function formatDateTime(iso){ if(!iso) return '—'; const d = new Date(iso); return `${d.toLocaleDateString('ru-RU')} ${d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`; }
+    function csvEscape(v){ const s = String(v ?? ''); if(/[";\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"'; return s; }
+    function escapeHtml(s){ return String(s ?? '').replace(/[&<>\"]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[m])); }
+    function setTab(tab){ state.activeTab = tab; document.querySelectorAll('[id^="tab-"]').forEach(x=>x.classList.add('hidden')); document.getElementById('tab-' + tab).classList.remove('hidden'); document.querySelectorAll('[data-tab]').forEach(btn => { btn.classList.toggle('btn-primary', btn.dataset.tab === tab); if(btn.dataset.tab !== tab) btn.classList.remove('btn-primary'); }); if(tab==='reports') buildReport(); }
+    function renderAll(){ renderEmployeeOptions(); renderSelectedEmployee(); renderJournal(); buildReport(); }
+
+    document.getElementById('saveConfigBtn').addEventListener('click', ()=>{ saveSettings(); setStatus('Настройки сохранены локально в браузере.', 'ok'); });
+    document.getElementById('testApiBtn').addEventListener('click', testApi); document.getElementById('syncBtn').addEventListener('click', syncData);
+    document.getElementById('startCameraBtn').addEventListener('click', startCamera); document.getElementById('captureBtn').addEventListener('click', capturePhoto); document.getElementById('clearPhotoBtn').addEventListener('click', clearPhoto);
+    document.getElementById('newEmployeeBtn').addEventListener('click', openNewEmployee); document.getElementById('saveEmployeeBtn').addEventListener('click', saveEmployeeRemote);
+    document.querySelectorAll('[data-meal]').forEach(btn => btn.addEventListener('click', ()=>registerMeal(btn.dataset.meal)));
+    document.querySelectorAll('[data-tab]').forEach(btn => btn.addEventListener('click', ()=>setTab(btn.dataset.tab)));
+    document.getElementById('exportBtn').addEventListener('click', exportCSV);
+    document.getElementById('resetFiltersBtn').addEventListener('click', ()=>{ els.filterText.value=''; els.filterDate.value=''; els.filterMeal.value=''; renderJournal(); });
+    [els.filterText, els.filterDate, els.filterMeal].forEach(el => el.addEventListener('input', renderJournal));
+    els.employeeSearch.addEventListener('change', ()=>{ const q = els.employeeSearch.value.trim().toLowerCase(); const emp = state.employees.find(e => [e.fullName,e.staffId,e.department].join(' ').toLowerCase().includes(q)); if(emp){ state.selectedEmployeeId = emp.employeeId || emp.id; els.employeeEditor.classList.remove('hidden'); renderSelectedEmployee(); setStatus('Сотрудник выбран.', 'ok'); } });
+    els.employeeSelect.addEventListener('change', ()=>{ if(els.employeeSelect.value) selectEmployee(els.employeeSelect.value); });
+    document.getElementById('buildReportBtn').addEventListener('click', buildReport);
+    document.getElementById('themeBtn').addEventListener('click', ()=>{ const html = document.documentElement; const dark = html.getAttribute('data-theme') === 'dark'; html.setAttribute('data-theme', dark ? 'light' : 'dark'); if(!dark){ document.documentElement.style.setProperty('--bg','#0f1722'); document.documentElement.style.setProperty('--surface','#161f2b'); document.documentElement.style.setProperty('--surface2','#1b2737'); document.documentElement.style.setProperty('--text','#eef4ff'); document.documentElement.style.setProperty('--muted','#9fb0c5'); document.documentElement.style.setProperty('--border','#2a3a4e'); document.body.style.background='linear-gradient(180deg,#0d1420 0%,#121d2c 100%)'; } else { document.documentElement.style.cssText=''; document.body.style.background='linear-gradient(180deg,#f8fbff 0%,#eff4fb 100%)'; } });
+
+    loadSettings();
+    const today = new Date().toISOString().slice(0,10); els.filterDate.value = today; els.reportDateFrom.value = today; els.reportDateTo.value = today;
+    renderAll(); setTab('journal'); setStatus('Приложение загружено. Подключите Apps Script и выполните синхронизацию.', 'ok');
+  </script>
+</body>
+</html>
