@@ -294,9 +294,9 @@ function renderJournal(){
 const rows=filteredMeals();
 els.journalBody.innerHTML=rows.map(row=>`<tr><td>${formatDateTime(row.timestamp)}</td><td><strong>${escapeHtml(row.employeeName||'')}</strong></td><td>${escapeHtml(row.department||'')}</td><td><span class="badge ${badgeClass(row.mealType)}">${escapeHtml(row.mealType||'')}</span></td><td>${escapeHtml(row.siteName||'')}</td></tr>`).join('');
 els.statTotal.textContent=rows.length;
-els.statBreakfast.textContent=rows.filter(x=>x.mealType==='Завтрак').length;
-els.statLunch.textContent=rows.filter(x=>x.mealType==='Обед').length;
-els.statDinner.textContent=rows.filter(x=>x.mealType==='Ужин').length;
+els.statBreakfast.textContent=rows.filter(x=>x.mealType===' Завтрак').length;
+els.statLunch.textContent=rows.filter(x=>x.mealType===' Обед').length;
+els.statDinner.textContent=rows.filter(x=>x.mealType===' Ужин').length;
 }
 
 function buildReport(){
@@ -306,8 +306,8 @@ if(from)rows=rows.filter(r=>String(r.date||r.timestamp?.slice(0,10))>=from);
 if(to)rows=rows.filter(r=>String(r.date||r.timestamp?.slice(0,10))<=to);
 if(deptText)rows=rows.filter(r=>String(r.department||'').toLowerCase().includes(deptText));
 const byDept={};
-rows.forEach(r=>{const key=r.department||'Без подразделения';if(!byDept[key])byDept[key]={total:0,breakfast:0,lunch:0,dinner:0};byDept[key].total++;if(r.mealType==='Завтрак')byDept[key].breakfast++;if(r.mealType==='Обед')byDept[key].lunch++;if(r.mealType==='Ужин')byDept[key].dinner++});
-const summary=`<div class="stats"><div class="stat"><div class="mini">Всего</div><div class="n">${rows.length}</div></div><div class="stat"><div class="mini">Завтраков</div><div class="n">${rows.filter(r=>r.mealType==='Завтрак').length}</div></div><div class="stat"><div class="mini">Обедов</div><div class="n">${rows.filter(r=>r.mealType==='Обед').length}</div></div><div class="stat"><div class="mini">Ужинов</div><div class="n">${rows.filter(r=>r.mealType==='Ужин').length}</div></div></div>`;
+rows.forEach(r=>{const key=r.department||'Без подразделения';if(!byDept[key])byDept[key]={total:0,breakfast:0,lunch:0,dinner:0};byDept[key].total++;if(r.mealType==='Завтрак')byDept[key].breakfast++;if(r.mealType===' Обед')byDept[key].lunch++;if(r.mealType===' Ужин')byDept[key].dinner++});
+const summary=`<div class="stats"><div class="stat"><div class="mini">Всего</div><div class="n">${rows.length}</div></div><div class="stat"><div class="mini">Завтраков</div><div class="n">${rows.filter(r=>r.mealType===' Завтрак').length}</div></div><div class="stat"><div class="mini">Обедов</div><div class="n">${rows.filter(r=>r.mealType==='Обед').length}</div></div><div class="stat"><div class="mini">Ужинов</div><div class="n">${rows.filter(r=>r.mealType==='Ужин').length}</div></div></div>`;
 const table=Object.entries(byDept).map(([dept,v])=>`<tr><td>${escapeHtml(dept)}</td><td>${v.total}</td><td>${v.breakfast}</td><td>${v.lunch}</td><td>${v.dinner}</td></tr>`).join('');
 els.reportContent.innerHTML=summary+`<div class="table-wrap" style="margin-top:14px;"><table><thead><tr><th>Подразделение</th><th>Всего</th><th>Завтрак</th><th>Обед</th><th>Ужин</th></tr></thead><tbody>${table||'<tr><td colspan="5">Нет данных.</td></tr>'}</tbody></table></div>`;
 }
