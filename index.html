@@ -180,7 +180,7 @@ els.mealTypeHint.textContent='Сейчас не время приёма пищи
 btn.textContent='Получить питание';
 return}
 const taken=emp&&state.verified?hasMealToday(emp.employeeId||emp.id,meal):false;
-btn.innerHTML=`Получить питание<span class="meal-type" id="mealTypeHint"> ${meal}${taken?' — уже получено':''}</span>`;
+btn.innerHTML=`Получить питание<br><span class="meal-type" id="mealTypeHint">${meal}${taken?' — уже получено':''}</span>`;
 els.mealTypeHint=document.getElementById('mealTypeHint');
 btn.disabled=!(emp&&state.verified&&!taken);
 if(taken&&emp)setKioskBanner(`${emp.fullName}: ${meal} уже выдан сегодня`,'warn');
