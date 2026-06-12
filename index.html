@@ -179,8 +179,10 @@ btn.disabled=true;
 els.mealTypeHint.textContent='Сейчас не время приёма пищи (6:00–23:00)';
 btn.textContent='Получить питание';
 return}
-const taken=emp&&state.verified?hasMealToday(emp.employeeId||emp.id,meal):false;
-btn.innerHTML=`Получить питание<br><span class="meal-type" id="mealTypeHint">${meal}${taken?' — уже получено':''}</span>`;
+  const taken=emp&&state.verified?hasMealToday(emp.employeeId||emp.id,meal):false;
+btn.innerHTML=`Получить питание
+${meal}${taken?' — уже получено':''}`;
+btn.style.whiteSpace='pre-line';
 els.mealTypeHint=document.getElementById('mealTypeHint');
 btn.disabled=!(emp&&state.verified&&!taken);
 if(taken&&emp)setKioskBanner(`${emp.fullName}: ${meal} уже выдан сегодня`,'warn');
