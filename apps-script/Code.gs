@@ -1,18 +1,30 @@
-/**
- * Meal Kiosk — бэкенд на Google Apps Script
+* Питание Персонала — бэкенд на Google Apps Script
  *
- * Установка:
- * 1. Создайте Google Таблицу
- * 2. Расширения → Apps Script → вставьте этот код
- * 3. Развернуть → Новое развертывание → Веб-приложение
- *    - Выполнять от имени: Я
- *    - Доступ: Все пользователи
- * 4. Скопируйте URL (/exec) в настройки киоска
+ * Установка (один раз):
+ *  1. Создайте новую Google Таблицу.
+ *  2. Расширения → Apps Script → удалите Code.gs по умолчанию,
+ *     вставьте этот файл и сохраните (значок дискеты).
+ *  3. Запустите функцию setupSheets (выберите её в выпадающем
+ *     списке наверху, нажмите ▶ «Выполнить»). Разрешите доступ.
+ *  4. Развернуть → Новое развертывание → тип «Веб-приложение»:
+ *        Выполнять от имени: «Я»
+ *        Доступ:           «Все»
+ *     Нажмите «Развернуть» и скопируйте URL, оканчивающийся на /exec.
+ *  5. Вставьте этот URL в файле public/kiosk.html в константу
+ *     API_URL (вверху <script>). Опубликуйте сайт заново.
+ *
+ * После этого приложение всегда работает с этим бэкендом без
+ * каких-либо ручных настроек URL в интерфейсе.
  */
 
 var SHEET_EMPLOYEES = 'Employees';
-var SHEET_MEALS = 'Meals';
-var SHEET_LOGS = 'Logs';
+var SHEET_MEALS     = 'Meals';
+var SHEET_LOGS      = 'Logs';
+
+// Минимальный интервал между двумя выдачами питания одному
+// сотруднику (минуты). Защищает от повторного получения
+// независимо от того, Завтрак/Обед/Ужин.
+var COOLDOWN_MINUTES = 60;
 
 var EMPLOYEE_HEADERS = [
   'employeeId', 'fullName', 'staffId', 'department', 'position',
@@ -35,7 +47,7 @@ function doGet(e) {
     var action = (e && e.parameter && e.parameter.action) || '';
     switch (action) {
       case 'ping':
-        return respond({ ok: true, message: 'pong', version: '1.0' });
+        return respond({ ok: true, message: 'pong', version: '2.0', cooldownMinutes: COOLDOWN_MINUTES });
       case 'listEmployees':
         return respond({ ok: true, items: listEmployees() });
       case 'listMeals':
@@ -53,12 +65,9 @@ function doPost(e) {
     var action = (e && e.parameter && e.parameter.action) || '';
     var body = JSON.parse(e.postData.contents);
     switch (action) {
-      case 'saveEmployee':
-        return respond(saveEmployee(body));
-      case 'saveMeal':
-        return respond(saveMeal(body));
-      case 'logEvent':
-        return respond(logEvent(body));
+      case 'saveEmployee': return respond(saveEmployee(body));
+      case 'saveMeal':     return respond(saveMeal(body));
+      case 'logEvent':     return respond(logEvent(body));
       default:
         return respond({ ok: false, status: 'error', message: 'Неизвестное действие: ' + action });
     }
@@ -72,9 +81,7 @@ function respond(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function getSpreadsheet_() {
-  return SpreadsheetApp.getActiveSpreadsheet();
-}
+function getSpreadsheet_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 
 function getOrCreateSheet_(name, headers) {
   var ss = getSpreadsheet_();
@@ -97,9 +104,7 @@ function sheetToObjects_(sheet) {
     var row = data[i];
     if (!row.some(function(cell) { return cell !== '' && cell !== null; })) continue;
     var obj = {};
-    for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = row[j];
-    }
+    for (var j = 0; j < headers.length; j++) obj[headers[j]] = row[j];
     rows.push(obj);
   }
   return rows;
@@ -121,9 +126,7 @@ function objectToRow_(headers, obj) {
   return headers.map(function(h) { return obj[h] !== undefined && obj[h] !== null ? obj[h] : ''; });
 }
 
-function nowIso_() {
-  return new Date().toISOString();
-}
+function nowIso_() { return new Date().toISOString(); }
 
 function listEmployees() {
   var sheet = getOrCreateSheet_(SHEET_EMPLOYEES, EMPLOYEE_HEADERS);
@@ -154,10 +157,10 @@ function saveEmployee(body) {
 
   var record = {
     employeeId: id,
-    fullName: String(body.fullName).trim(),
-    staffId: body.staffId || '',
-    department: body.department || '',
-    position: body.position || '',
+    fullName: String(body.fullName).trim().slice(0, 120),
+    staffId: String(body.staffId || '').slice(0, 40),
+    department: String(body.department || '').slice(0, 80),
+    position: String(body.position || '').slice(0, 80),
     photo: truncatePhoto_(body.photo || (existing && existing.photo) || ''),
     faceDescriptor: body.faceDescriptor || (existing && existing.faceDescriptor) || '',
     active: body.active !== false,
@@ -174,8 +177,7 @@ function saveEmployee(body) {
 
   logEvent_({
     type: rowNum ? 'employee_update' : 'employee_create',
-    employeeId: id,
-    employeeName: record.fullName,
+    employeeId: id, employeeName: record.fullName,
     status: 'ok',
     message: rowNum ? 'Сотрудник обновлён' : 'Сотрудник создан'
   });
@@ -183,66 +185,93 @@ function saveEmployee(body) {
   return { ok: true, employeeId: id, employee: record };
 }
 
+/**
+ * Регистрация выдачи питания.
+ * Сервер — последняя линия защиты: даже если клиент обойдёт UI,
+ * выдача чаще чем раз в COOLDOWN_MINUTES будет отклонена.
+ */
 function saveMeal(body) {
   if (!body || !body.employeeId || !body.mealType) {
     return { ok: false, status: 'error', message: 'Неполные данные для регистрации питания' };
   }
 
-  var sheet = getOrCreateSheet_(SHEET_MEALS, MEAL_HEADERS);
-  var date = body.date || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  var meals = sheetToObjects_(sheet);
-
-  var duplicate = meals.some(function(m) {
-    return String(m.employeeId) === String(body.employeeId) &&
-      String(m.mealType) === String(body.mealType) &&
-      mealDate_(m) === date;
-  });
-
-  if (duplicate) {
-    return {
-      ok: false,
-      status: 'error',
-      message: body.mealType + ' уже зарегистрирован сегодня для этого сотрудника'
-    };
+  // Глобальная блокировка — нельзя одновременно записывать
+  // две выдачи (защищает от двойного нажатия).
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(5000); } catch (e) {
+    return { ok: false, status: 'error', message: 'Сервер занят, повторите через секунду' };
   }
 
-  var record = {
-    mealId: body.mealId || Utilities.getUuid(),
-    timestamp: body.timestamp || nowIso_(),
-    date: date,
-    time: body.time || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm:ss'),
-    employeeId: body.employeeId,
-    employeeName: body.employeeName || '',
-    staffId: body.staffId || '',
-    department: body.department || '',
-    mealType: body.mealType,
-    siteName: body.siteName || '',
-    operator: body.operator || '',
-    matchScore: body.matchScore !== undefined ? body.matchScore : '',
-    photo: truncatePhoto_(body.photo || ''),
-    verified: body.verified !== false,
-    note: body.note || ''
-  };
+  try {
+    var sheet = getOrCreateSheet_(SHEET_MEALS, MEAL_HEADERS);
+    var meals = sheetToObjects_(sheet);
+    var now = new Date();
+    var nowMs = now.getTime();
+    var cooldownMs = COOLDOWN_MINUTES * 60 * 1000;
 
-  sheet.appendRow(objectToRow_(MEAL_HEADERS, record));
+    // Ищем последнюю выдачу этому сотруднику.
+    var lastTs = 0, lastMeal = null;
+    for (var i = 0; i < meals.length; i++) {
+      if (String(meals[i].employeeId) !== String(body.employeeId)) continue;
+      var t = Date.parse(meals[i].timestamp);
+      if (!isNaN(t) && t > lastTs) { lastTs = t; lastMeal = meals[i]; }
+    }
 
-  logEvent_({
-    type: 'meal',
-    employeeId: record.employeeId,
-    employeeName: record.employeeName,
-    status: 'ok',
-    message: record.mealType + ' зарегистрирован',
-    photo: record.photo,
-    matchScore: record.matchScore
-  });
+    if (lastTs && (nowMs - lastTs) < cooldownMs) {
+      var leftMin = Math.ceil((cooldownMs - (nowMs - lastTs)) / 60000);
+      logEvent_({
+        type: 'meal_blocked',
+        employeeId: body.employeeId,
+        employeeName: body.employeeName || '',
+        status: 'blocked',
+        message: 'Повторная попытка через ' + Math.round((nowMs - lastTs) / 60000) + ' мин (последний: ' + (lastMeal && lastMeal.mealType) + ')'
+      });
+      return {
+        ok: false,
+        status: 'cooldown',
+        message: 'Питание уже выдано (' + (lastMeal && lastMeal.mealType) + '). Следующая выдача через ' + leftMin + ' мин.',
+        minutesLeft: leftMin,
+        lastMealType: lastMeal && lastMeal.mealType,
+        lastTimestamp: lastMeal && lastMeal.timestamp
+      };
+    }
 
-  return { ok: true, mealId: record.mealId, meal: record };
+    var record = {
+      mealId: body.mealId || Utilities.getUuid(),
+      timestamp: nowIso_(),
+      date: Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+      time: Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm:ss'),
+      employeeId: body.employeeId,
+      employeeName: body.employeeName || '',
+      staffId: body.staffId || '',
+      department: body.department || '',
+      mealType: body.mealType,
+      siteName: body.siteName || '',
+      operator: body.operator || '',
+      matchScore: body.matchScore !== undefined ? body.matchScore : '',
+      photo: truncatePhoto_(body.photo || ''),
+      verified: body.verified !== false,
+      note: body.note || ''
+    };
+
+    sheet.appendRow(objectToRow_(MEAL_HEADERS, record));
+
+    logEvent_({
+      type: 'meal',
+      employeeId: record.employeeId, employeeName: record.employeeName,
+      status: 'ok',
+      message: record.mealType + ' зарегистрирован',
+      photo: record.photo,
+      matchScore: record.matchScore
+    });
+
+    return { ok: true, mealId: record.mealId, meal: record };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
-function logEvent(body) {
-  logEvent_(body || {});
-  return { ok: true };
-}
+function logEvent(body) { logEvent_(body || {}); return { ok: true }; }
 
 function logEvent_(body) {
   try {
@@ -258,28 +287,19 @@ function logEvent_(body) {
       photo: truncatePhoto_(body.photo || ''),
       matchScore: body.matchScore !== undefined ? body.matchScore : ''
     }));
-  } catch (e) {
-    // журнал не должен ломать основной поток
-  }
-}
-
-function mealDate_(meal) {
-  if (meal.date) return String(meal.date).slice(0, 10);
-  if (meal.timestamp) return String(meal.timestamp).slice(0, 10);
-  return '';
+  } catch (e) { /* журнал не должен ломать основной поток */ }
 }
 
 function truncatePhoto_(photo) {
   if (!photo) return '';
   var s = String(photo);
-  if (s.length <= 45000) return s;
-  return s.slice(0, 45000);
+  return s.length <= 45000 ? s : s.slice(0, 45000);
 }
 
-/** Запустите один раз из редактора Apps Script для создания листов */
+/** Запустите один раз из редактора Apps Script для создания листов. */
 function setupSheets() {
   getOrCreateSheet_(SHEET_EMPLOYEES, EMPLOYEE_HEADERS);
-  getOrCreateSheet_(SHEET_MEALS, MEAL_HEADERS);
-  getOrCreateSheet_(SHEET_LOGS, LOG_HEADERS);
-  Logger.log('Листы Employees, Meals, Logs готовы.');
+  getOrCreateSheet_(SHEET_MEALS,     MEAL_HEADERS);
+  getOrCreateSheet_(SHEET_LOGS,      LOG_HEADERS);
+  Logger.log('Готово: листы Employees, Meals, Logs созданы.');
 }
