@@ -226,7 +226,6 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 </aside>
 </div>
 
-<!-- Мастер первоначальной настройки точки (только название/оператор) -->
 <div class="setup-wizard hidden" id="setupWizard">
   <div class="setup-box">
     <div class="section-title">Настройка точки</div>
@@ -266,45 +265,24 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 </div>
 
 <script>
-/* =========================================================
-   Питание Персонала — клиентская часть
-   Бэкенд (Apps Script) зашит в константу API_URL ниже.
-   ========================================================= */
-
 const API_URL = 'https://script.google.com/macros/s/AKfycbzUsOmOm_D1G9rt3NQq5YJ4CIS356pR9s_sA7JUm9vPPpUBOwL8f3kY9J3TUbSS4S0m/exec';
-
 const SETTINGS_KEY = 'meal_kiosk_settings_v6';
 const DEFAULT_PIN  = '1234';
-
-/* Окна приёма пищи (минуты от полуночи) */
 const MEAL_WINDOWS = { 'Завтрак':[360,780], 'Обед':[781,980], 'Ужин':[981,1380] };
-
-/* Защита от повторного получения: одна выдача в час (для UI;
-   сервер всё равно проверяет повторно). */
 const COOLDOWN_MS = 60 * 60 * 1000;
-
-/* ===== Антиспуфинг / антипробег =====
-   - Требуется N подряд успешных распознаваний (один и тот же
-     человек, расстояние < DIST_OK) за окно времени.
-   - Между ними проверяется ЖИВОСТЬ:
-       * заметная вариация дескриптора между кадрами (фото даёт
-         почти одинаковый дескриптор),
-       * либо моргание (изменение EAR ниже порога хотя бы раз).
-*/
-const REQUIRED_CONSECUTIVE = 3;              // подряд кадров
-const FRAME_INTERVAL_MS    = 600;            // период скана
-const DIST_OK              = 0.45;           // строгое совпадение
-const DIST_BORDER          = 0.55;           // максимум для попадания «в кандидаты»
-const MIN_DESCRIPTOR_VAR   = 0.015;          // мин. изменчивость между кадрами
-const EAR_BLINK_THRESHOLD  = 0.21;           // порог закрытия глаза
-const MIN_FACE_RATIO       = 0.18;           // лицо должно занимать >=18% кадра
+const REQUIRED_CONSECUTIVE = 3;
+const FRAME_INTERVAL_MS    = 600;
+const DIST_OK              = 0.45;
+const DIST_BORDER          = 0.55;
+const MIN_DESCRIPTOR_VAR   = 0.015;
+const EAR_BLINK_THRESHOLD  = 0.21;
+const MIN_FACE_RATIO       = 0.18;
 
 const state = {
   employees:[], meals:[], selectedEmployeeId:null, capturedPhoto:null,
   stream:null, activeTab:'employees', verified:false, matchScore:null,
   modelsLoaded:false, uiMode:'registrar', scanTimer:null, scanBusy:false,
   setupDone:false, pinInput:'',
-  // антиспуфинг
   pendingMatchId:null, pendingFrames:[], pendingBlinkSeen:false, lastEAR:null
 };
 
@@ -346,7 +324,25 @@ function setStatus(text,cls=''){if(!els.statusLine)return;els.statusLine.textCon
 function setFaceStatus(t,cls=''){els.faceStatus.textContent=t;els.faceStatus.style.background=cls==='ok'?'rgba(27,127,82,.82)':cls==='warn'?'rgba(158,106,0,.82)':cls==='err'?'rgba(200,58,45,.82)':'rgba(13,21,32,.72)'}
 function updateSiteSubtitle(){const site=(els.siteName?.value||'').trim();els.siteSubtitle.textContent=site||'Подойдите к камере'}
 
-/* ---------- последняя выдача (для UI 60-мин cooldown) ---------- */
+/* ---------- сжатие фото для хранения в Google Sheets ---------- */
+function resizePhoto(dataUrl, maxSize) {
+  maxSize = maxSize || 200;
+  return new Promise(function(resolve) {
+    var img = new Image();
+    img.onload = function() {
+      var canvas = document.createElement('canvas');
+      var scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.5));
+    };
+    img.onerror = function() { resolve(dataUrl); };
+    img.src = dataUrl;
+  });
+}
+
+/* ---------- последняя выдача ---------- */
 function lastMealForEmployee(empId){
   let last=null;
   for(const m of state.meals){
@@ -421,16 +417,8 @@ function updateMealButton(){
   const meal=getCurrentMealType();
   const emp=getSelectedEmployee();
   const btn=els.getMealBtn;
-  if(!meal){
-    btn.disabled=true;
-    btn.textContent='Сейчас не время приёма пищи';
-    return;
-  }
-  if(!emp||!state.verified){
-    btn.disabled=true;
-    btn.textContent='Получить питание ('+meal+')';
-    return;
-  }
+  if(!meal){btn.disabled=true;btn.textContent='Сейчас не время приёма пищи';return}
+  if(!emp||!state.verified){btn.disabled=true;btn.textContent='Получить питание ('+meal+')';return}
   const left=cooldownLeftMs(emp.employeeId||emp.id);
   if(left>0){
     const min=Math.ceil(left/60000);
@@ -512,7 +500,6 @@ function renderSelectedEmployee(){
   els.matchInfo.textContent='Совпадение: '+(state.matchScore!==null?state.matchScore+'%':'—');
   els.empName.value=emp.fullName||'';els.empId.value=emp.staffId||'';els.empDept.value=emp.department||'';els.empPos.value=emp.position||'';
 }
-
 function filteredMeals(){
   const text=els.filterText.value.trim().toLowerCase();
   const date=els.filterDate.value;const meal=els.filterMeal.value;
@@ -560,7 +547,7 @@ function setTab(tab){
 }
 function renderAll(){renderEmployeeOptions();renderSelectedEmployee();renderJournal();if(state.activeTab==='reports')buildReport();updateMealButton()}
 
-/* ---------- сервер: загрузка / тест ---------- */
+/* ---------- сервер ---------- */
 async function testApi(){try{const data=await apiGet('ping');setStatus(data.ok||data.message==='pong'?'Бэкенд доступен.':'Бэкенд отвечает с ошибкой.',data.ok?'ok':'warn')}catch(e){setStatus('Ошибка связи: '+e.message,'err')}}
 async function syncData(){try{setStatus('Загрузка…','');const [emp,meals]=await Promise.all([apiGet('listEmployees'),apiGet('listMeals',{limit:500})]);state.employees=Array.isArray(emp)?emp:(emp.items||[]);state.meals=Array.isArray(meals)?meals:(meals.items||[]);renderAll();setStatus('Данные обновлены.','ok')}catch(e){setStatus('Ошибка загрузки: '+e.message,'err')}}
 
@@ -576,13 +563,7 @@ function showFaceBox(box,pending=false){
 }
 async function computeFaceDescriptor(source){if(!state.modelsLoaded)return null;const detection=await detectFace(source);return detection?Array.from(detection.descriptor):null}
 function scoreFromDistance(dist){return Math.max(0,Math.round((1-Math.min(dist,1))*100))}
-
-/* EAR (eye aspect ratio) — простая мера открытости глаза */
-function eyeAR(eye){
-  // eye: 6 точек {x,y}
-  const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
-  return (d(eye[1],eye[5])+d(eye[2],eye[4]))/(2*d(eye[0],eye[3]));
-}
+function eyeAR(eye){const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);return (d(eye[1],eye[5])+d(eye[2],eye[4]))/(2*d(eye[0],eye[3]))}
 function descriptorDiff(a,b){let s=0;for(let i=0;i<a.length;i++)s+=(a[i]-b[i])*(a[i]-b[i]);return Math.sqrt(s)}
 
 async function captureFaceFromCamera(){
@@ -607,8 +588,9 @@ async function saveEmployeeRemote(){
     const source=state.capturedPhoto?await loadImageFromDataUrl(state.capturedPhoto):els.video;
     const desc=await computeFaceDescriptor(source);
     if(!desc){setStatus('Лицо не видно на фото.','err');return}
-    faceDescriptor=desc.join(',');photo=state.capturedPhoto||photo;
-if(photo) photo = await resizePhoto(photo);
+    faceDescriptor=desc.join(',');
+    photo=state.capturedPhoto||photo;
+    if(photo) photo = await resizePhoto(photo);
   }catch(e){setStatus('Ошибка Face ID: '+e.message,'err');return}
   const payload={employeeId:state.selectedEmployeeId||generateUUID(),fullName,staffId:els.empId.value.trim(),department:els.empDept.value.trim(),position:els.empPos.value.trim(),photo,faceDescriptor,active:true};
   try{
@@ -620,82 +602,43 @@ if(photo) photo = await resizePhoto(photo);
   }catch(e){setStatus('Ошибка: '+e.message,'err')}
 }
 
-/* ---------- АНТИСПУФИНГ + автораспознавание ---------- */
+/* ---------- антиспуфинг ---------- */
 function resetPending(){
   state.pendingMatchId=null;state.pendingFrames=[];state.pendingBlinkSeen=false;state.lastEAR=null;
   els.faceBox.classList.remove('pending');els.livenessPip.style.display='none';
 }
-
 async function identifyEmployeeFromVideo(){
   if(!state.modelsLoaded||!state.stream||state.scanBusy||state.uiMode!=='registrar'||state.verified)return;
   state.scanBusy=true;
   try{
     const detection=await detectFace(els.video);
     if(!detection){setFaceStatus('Смотрите в камеру','warn');resetPending();return}
-
-    // Лицо должно быть достаточно крупным (близко к камере) —
-    // отсекает «прошёл мимо»
     const vw=els.video.videoWidth||1;
     const faceRatio=detection.detection.box.width/vw;
-    if(faceRatio<MIN_FACE_RATIO){
-      setFaceStatus('Подойдите ближе','warn');
-      showFaceBox(detection.detection.box,true);
-      resetPending();return;
-    }
-
+    if(faceRatio<MIN_FACE_RATIO){setFaceStatus('Подойдите ближе','warn');showFaceBox(detection.detection.box,true);resetPending();return}
     const labeled=employeesWithDescriptors();
     if(!labeled.length){setFaceStatus('База пуста','warn');setKioskBanner('База сотрудников пуста. Обратитесь к администратору.','warn');return}
-
     const matcher=new faceapi.FaceMatcher(labeled.map(x=>new faceapi.LabeledFaceDescriptors(String(x.emp.employeeId||x.emp.id),[x.desc])),DIST_BORDER);
     const match=matcher.findBestMatch(detection.descriptor);
-
-    if(match.label==='unknown'||match.distance>DIST_BORDER){
-      setFaceStatus('Не в базе','warn');
-      setKioskBanner('Лицо не распознано. Обратитесь к администратору.','warn');
-      showFaceBox(detection.detection.box,true);
-      resetPending();return;
-    }
-
-    // Кандидат найден — проверяем устойчивость
-    if(state.pendingMatchId&&state.pendingMatchId!==match.label){
-      resetPending(); // лицо сменилось — сброс
-    }
+    if(match.label==='unknown'||match.distance>DIST_BORDER){setFaceStatus('Не в базе','warn');setKioskBanner('Лицо не распознано. Обратитесь к администратору.','warn');showFaceBox(detection.detection.box,true);resetPending();return}
+    if(state.pendingMatchId&&state.pendingMatchId!==match.label)resetPending();
     state.pendingMatchId=match.label;
-
     const desc=new Float32Array(detection.descriptor);
     const landmarks=detection.landmarks;
     const ear=(eyeAR(landmarks.getLeftEye())+eyeAR(landmarks.getRightEye()))/2;
-
-    // моргание = резкое падение EAR между кадрами
-    if(state.lastEAR!==null && state.lastEAR>=EAR_BLINK_THRESHOLD+0.05 && ear<EAR_BLINK_THRESHOLD){
-      state.pendingBlinkSeen=true;
-    }
+    if(state.lastEAR!==null && state.lastEAR>=EAR_BLINK_THRESHOLD+0.05 && ear<EAR_BLINK_THRESHOLD)state.pendingBlinkSeen=true;
     state.lastEAR=ear;
-
     state.pendingFrames.push(desc);
     if(state.pendingFrames.length>REQUIRED_CONSECUTIVE)state.pendingFrames.shift();
-
     showFaceBox(detection.detection.box,true);
     els.livenessPip.style.display='block';
     els.livenessPip.textContent=`Подтверждение… ${state.pendingFrames.length}/${REQUIRED_CONSECUTIVE}`+(state.pendingBlinkSeen?' ✓ моргание':'');
     setFaceStatus('Распознавание…','warn');
-
     if(state.pendingFrames.length<REQUIRED_CONSECUTIVE||match.distance>DIST_OK)return;
-
-    // Проверка живости: либо моргание было, либо дескриптор
-    // менялся естественно (фото даёт почти 0 вариации).
     let maxDiff=0;
-    for(let i=1;i<state.pendingFrames.length;i++){
-      maxDiff=Math.max(maxDiff,descriptorDiff(state.pendingFrames[0],state.pendingFrames[i]));
-    }
+    for(let i=1;i<state.pendingFrames.length;i++)maxDiff=Math.max(maxDiff,descriptorDiff(state.pendingFrames[0],state.pendingFrames[i]));
     const livenessOk=state.pendingBlinkSeen||maxDiff>=MIN_DESCRIPTOR_VAR;
-    if(!livenessOk){
-      setFaceStatus('Проверка живости…','warn');
-      setKioskBanner('Моргните, пожалуйста','warn');
-      return;
-    }
-
-    // Всё ок — фиксируем
+    if(!livenessOk){setFaceStatus('Проверка живости…','warn');setKioskBanner('Моргните, пожалуйста','warn');return}
     const emp=state.employees.find(e=>String(e.employeeId||e.id)===String(match.label));
     if(!emp){resetPending();return}
     capturePhoto();
@@ -703,23 +646,17 @@ async function identifyEmployeeFromVideo(){
     resetPending();
   }catch(e){setFaceStatus('Ошибка распознавания','err')}finally{state.scanBusy=false}
 }
-
 function applyFaceMatch(emp,score,dist){
   state.selectedEmployeeId=emp.employeeId||emp.id;
-  state.verified=true;
-  state.matchScore=score;
+  state.verified=true;state.matchScore=score;
   renderSelectedEmployee();updateRecognizedDisplay(emp);updateMealButton();
   els.matchInfo&&(els.matchInfo.textContent='Совпадение: '+score+'%');
   setFaceStatus('Распознан','ok');
   const left=cooldownLeftMs(emp.employeeId||emp.id);
-  if(left>0){
-    setKioskBanner(`${emp.fullName}: питание уже выдано (${Math.ceil(left/60000)} мин до следующей выдачи)`,'warn');
-  } else {
-    setKioskBanner(`Добро пожаловать, ${emp.fullName}!`,'ok');
-  }
+  if(left>0)setKioskBanner(`${emp.fullName}: питание уже выдано (${Math.ceil(left/60000)} мин до следующей выдачи)`,'warn');
+  else setKioskBanner(`Добро пожаловать, ${emp.fullName}!`,'ok');
   stopAutoScan();
 }
-
 async function verifyFace(){
   const emp=getSelectedEmployee();
   if(!emp){setStatus('Выберите сотрудника.','warn');return}
@@ -731,14 +668,9 @@ async function verifyFace(){
     if(!detection){setStatus('Лицо не найдено.','warn');setFaceStatus('Нет лица','warn');return}
     showFaceBox(detection.detection.box);
     let stored=parseFaceDescriptor(emp.faceDescriptor);
-    if(!stored){
-      setStatus('Создаём Face ID…','');
-      await captureFaceFromCamera();
-      setStatus('Сначала сохраните сотрудника с Face ID.','warn');return;
-    }
+    if(!stored){setStatus('Создаём Face ID…','');await captureFaceFromCamera();setStatus('Сначала сохраните сотрудника с Face ID.','warn');return}
     const dist=faceapi.euclideanDistance(detection.descriptor,stored);
-    state.verified=dist<DIST_OK;
-    state.matchScore=scoreFromDistance(dist);
+    state.verified=dist<DIST_OK;state.matchScore=scoreFromDistance(dist);
     capturePhoto();renderSelectedEmployee();
     setStatus(state.verified?`Лицо подтверждено (${state.matchScore}%).`:'Совпадение недостаточно.',state.verified?'ok':'err');
     setFaceStatus(state.verified?'Подтверждено':'Не совпало',state.verified?'ok':'err');
@@ -751,40 +683,20 @@ async function registerCurrentMeal(){
   if(!meal){setKioskBanner('Сейчас не время приёма пищи.','warn');return}
   const emp=getSelectedEmployee();
   if(!emp||!state.verified){setKioskBanner('Сначала распознайте лицо.','warn');return}
-
-  // Локальная проверка cooldown (UX)
   const left=cooldownLeftMs(emp.employeeId||emp.id);
-  if(left>0){
-    setKioskBanner(`Питание уже выдано. До следующей выдачи: ${Math.ceil(left/60000)} мин.`,'warn');
-    updateMealButton();return;
-  }
-
+  if(left>0){setKioskBanner(`Питание уже выдано. До следующей выдачи: ${Math.ceil(left/60000)} мин.`,'warn');updateMealButton();return}
   const now=new Date();
-  const payload={
-    mealId:generateUUID(),timestamp:now.toISOString(),date:todayStr(),
-    time:now.toLocaleTimeString('ru-RU'),
-    employeeId:emp.employeeId||emp.id,employeeName:emp.fullName,
-    staffId:emp.staffId||'',department:emp.department||'',
-    mealType:meal,
-    siteName:els.siteName.value.trim(),operator:els.operatorName.value.trim(),
-    matchScore:state.matchScore,photo:state.capturedPhoto||emp.photo||'',
-    verified:true,note:'face_verified'
-  };
-
-  // Блокируем кнопку пока идёт запрос
+  const payload={mealId:generateUUID(),timestamp:now.toISOString(),date:todayStr(),time:now.toLocaleTimeString('ru-RU'),employeeId:emp.employeeId||emp.id,employeeName:emp.fullName,staffId:emp.staffId||'',department:emp.department||'',mealType:meal,siteName:els.siteName.value.trim(),operator:els.operatorName.value.trim(),matchScore:state.matchScore,photo:state.capturedPhoto||emp.photo||'',verified:true,note:'face_verified'};
   els.getMealBtn.disabled=true;
   try{
     const data=await apiPost('saveMeal',payload);
     if(data.ok===false||data.status==='error'||data.status==='cooldown'){
       const min=data.minutesLeft||Math.ceil(COOLDOWN_MS/60000);
       setKioskBanner(data.message||`Питание уже выдано. Подождите ${min} мин.`,'warn');
-      await syncData();
-      setTimeout(resetRegistrarSession,3000);
-      return;
+      await syncData();setTimeout(resetRegistrarSession,3000);return;
     }
     setKioskBanner(`✓ ${emp.fullName} — ${meal}`,'ok');
-    await syncData();
-    setTimeout(resetRegistrarSession,2500);
+    await syncData();setTimeout(resetRegistrarSession,2500);
   }catch(e){setKioskBanner('Ошибка: '+e.message,'err');els.getMealBtn.disabled=false}
 }
 
@@ -803,20 +715,6 @@ function startAutoScan(){
   stopAutoScan();
   if(state.uiMode!=='registrar'||state.verified||!state.modelsLoaded||!state.stream)return;
   state.scanTimer=setInterval(()=>{if(!state.verified&&!state.scanBusy)identifyEmployeeFromVideo()},FRAME_INTERVAL_MS);
-}
-  async function resizePhoto(dataUrl, maxSize = 200) {
-    return new Promise(resolve => {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-            canvas.width = Math.round(img.width * scale);
-            canvas.height = Math.round(img.height * scale);
-            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', 0.5));
-        };
-        img.src = dataUrl;
-    });
 }
 function capturePhoto(){
   const video=els.video;if(!video.videoWidth)return;
@@ -886,7 +784,6 @@ async function init(){
   syncData().catch(()=>{});
   if(typeof faceapi!=='undefined'){await loadModels();try{await startCamera()}catch{}}
   else setFaceStatus('face-api не загружен','err');
-  // Обновляем кнопку и тип питания каждую минуту
   setInterval(updateMealButton,60000);
 }
 
