@@ -488,7 +488,7 @@ function buildPinKeypad(){
 function renderEmployeeOptions(){
   els.employeeList.innerHTML=state.employees.map(e=>`<option value="${escapeHtml(e.fullName)}">`).join('');
   els.employeeSelect.innerHTML='<option value="">— Выберите —</option>'+state.employees.map(e=>`<option value="${escapeHtml(e.employeeId||e.id)}">${escapeHtml(e.fullName)}</option>`).join('');
-  els.employeesBody.innerHTML=state.employees.map(e=>`<tr><td>${e.photo?`<img class="avatar" style="width:48px;height:48px;border-radius:10px" src="${escapeHtml(e.photo)}" />`:'—'}</td><td>${escapeHtml(e.fullName)}</td><td>${escapeHtml(e.staffId||'')}</td><td>${escapeHtml(e.department||'')}</td><td><button class="btn btn-ghost" data-emp="${escapeHtml(e.employeeId||e.id)}" type="button">Выбрать</button></td></tr>`).join('');
+  els.employeesBody.innerHTML=state.employees.map(e=>`<tr><td>${e.photo?`<img class="avatar" style="width:48px;height:48px;border-radius:10px" src="${e.photo}" />`:'—'}</td><td>${escapeHtml(e.fullName)}</td><td>${escapeHtml(e.staffId||'')}</td><td>${escapeHtml(e.department||'')}</td><td><button class="btn btn-ghost" data-emp="${escapeHtml(e.employeeId||e.id)}" type="button">Выбрать</button></td></tr>`).join('');
   els.employeesBody.querySelectorAll('[data-emp]').forEach(btn=>btn.addEventListener('click',()=>selectEmployee(btn.dataset.emp)));
 }
 function selectEmployee(id){
