@@ -126,7 +126,7 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
   </div>
 
   <div class="registrar-only" style="margin-top:14px;">
-    <button class="btn btn-success btn-meal" id="getMealBtn" type="button" disabled>Получить питание
+    <button class="btn btn-success btn-meal" id="getMealBtn" type="button" disabled>Спасибо
 <span class="meal-type" id="mealTypeHint">—</span></button>
   </div>
 
@@ -418,7 +418,7 @@ function updateMealButton(){
   const emp=getSelectedEmployee();
   const btn=els.getMealBtn;
   if(!meal){btn.disabled=true;btn.textContent='Сейчас не время приёма пищи';return}
-  if(!emp||!state.verified){btn.disabled=true;btn.textContent='Получить питание ('+meal+')';return}
+  if(!emp||!state.verified){btn.disabled=true;btn.textContent='Спасибо за ('+meal+')';return}
   const left=cooldownLeftMs(emp.employeeId||emp.id);
   if(left>0){
     const min=Math.ceil(left/60000);
@@ -428,7 +428,7 @@ function updateMealButton(){
     return;
   }
   btn.disabled=false;
-  btn.textContent='Получить питание ('+meal+')';
+  btn.textContent='Спасибо за  ('+meal+')';
 }
 function resetRegistrarSession(){
   state.selectedEmployeeId=null;state.verified=false;state.matchScore=null;state.capturedPhoto=null;
