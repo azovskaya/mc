@@ -1,14 +1,16 @@
 <!doctype html>
 <html lang="ru" data-theme="light">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Питание Персонала</title>
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<!-- SheetJS для экспорта в .xlsx прямо в браузере -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#f4f7fb;--surface:#fff;--surface2:#eef3fb;--text:#142033;--muted:#66758a;--border:#d7e0eb;--primary:#0a6bcb;--primary2:#08539d;--success:#1b7f52;--warn:#9e6a00;--danger:#c83a2d;--radius:18px;--shadow:0 12px 32px rgba(15,23,42,.08)}
 *{box-sizing:border-box}
@@ -34,19 +36,40 @@ a{color:var(--primary)}
 .liveness-pip{position:absolute;right:14px;top:14px;background:rgba(13,21,32,.72);color:#fff;padding:8px 12px;border-radius:999px;font-size:12px;font-weight:700;display:none}
 .toolbar,.filters,.form-grid,.tabs{display:flex;gap:10px;flex-wrap:wrap}
 .toolbar{margin:14px 0}
-.btn{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:14px;padding:12px 14px;cursor:pointer;min-height:46px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+.btn{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:14px;padding:12px 14px;cursor:pointer;min-height:46px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 .btn-primary:hover{background:var(--primary2)}
 .btn-success{background:var(--success);color:#fff;border-color:var(--success)}
+.btn-warn{background:#fff7e8;color:var(--warn);border-color:#f5d17a}
+.btn-warn:hover{background:#fdefc2}
 .btn-ghost{background:transparent;border-color:transparent;color:var(--muted);min-height:40px;padding:8px 12px}
 .btn-ghost:hover{color:var(--text);background:var(--surface2)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
-.btn-meal{width:100%;font-size:22px;padding:22px 18px;border-radius:18px;margin-top:4px;white-space:pre-line}
-.btn-meal .meal-type{font-size:15px;font-weight:600;opacity:.9;display:block;margin-top:4px}
+.btn-meal{width:100%;font-size:22px;padding:22px 18px;border-radius:18px;margin-top:4px}
+.btn-extra{background:#f3eeff;color:#7c3aed;border-color:#c4b5fd;font-size:17px;padding:14px 18px;border-radius:18px;margin-top:8px;width:100%}
+.btn-extra:hover{background:#ede9fe}
 .kiosk-banner{font-size:22px;font-weight:800;text-align:center;padding:18px 16px;border-radius:16px;background:var(--surface2);margin-bottom:14px;line-height:1.35}
 .kiosk-banner.ok{background:#eefbf3;color:var(--success)}
 .kiosk-banner.warn{background:#fff7e8;color:var(--warn)}
 .kiosk-banner.err{background:#fff1ef;color:var(--danger)}
+/* ── Попап «Приятного аппетита» ── */
+.appetite-overlay{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;background:rgba(10,40,20,.55);opacity:0;pointer-events:none;transition:opacity .3s ease}
+.appetite-overlay.visible{opacity:1;pointer-events:auto}
+.appetite-box{background:#fff;border-radius:28px;padding:40px 48px;text-align:center;box-shadow:0 24px 64px rgba(0,0,0,.22);transform:scale(.9);transition:transform .3s ease;max-width:480px;width:90%}
+.appetite-overlay.visible .appetite-box{transform:scale(1)}
+.appetite-emoji{font-size:72px;line-height:1;margin-bottom:16px}
+.appetite-title{font-size:32px;font-weight:800;color:var(--success);margin-bottom:8px}
+.appetite-name{font-size:18px;color:var(--muted);margin-bottom:6px}
+.appetite-meal{font-size:15px;color:var(--muted)}
+/* ── Модальное окно «Доп. питание» ── */
+.modal-overlay{position:fixed;inset:0;z-index:1500;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.55);opacity:0;pointer-events:none;transition:opacity .25s ease}
+.modal-overlay.visible{opacity:1;pointer-events:auto}
+.modal-box{background:#fff;border-radius:22px;padding:28px;max-width:440px;width:92%;box-shadow:0 20px 56px rgba(0,0,0,.2);transform:scale(.94);transition:transform .25s ease}
+.modal-overlay.visible .modal-box{transform:scale(1)}
+.modal-title{font-size:20px;font-weight:800;margin-bottom:6px}
+.modal-sub{font-size:13px;color:var(--muted);margin-bottom:16px}
+.modal-actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+/* ── Общие ── */
 .recognized-name{text-align:center;font-size:28px;font-weight:800;margin:8px 0 4px}
 .recognized-meta{text-align:center;color:var(--muted);font-size:14px;margin-bottom:12px}
 .setup-wizard,.pin-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:grid;place-items:center;padding:18px;z-index:1000}
@@ -75,179 +98,296 @@ textarea{min-height:90px;resize:vertical}
 .right{display:flex;flex-direction:column;gap:14px}
 .hidden{display:none!important}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stats-5{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
 .stat{padding:12px;border:1px solid var(--border);border-radius:14px;background:#fff}
 .stat .n{font-size:24px;font-weight:800}
-.table-wrap{max-height:360px;overflow:auto}
+.table-wrap{max-height:420px;overflow:auto}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}
-th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.badge{display:inline-flex;align-items:center;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700}
+th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700}
 .b-breakfast{background:#edf5ff;color:#0a6bcb}
 .b-lunch{background:#eefbf3;color:#1b7f52}
 .b-dinner{background:#fff7e8;color:#9e6a00}
+.b-extra{background:#f3eeff;color:#7c3aed}
+.report-total td{font-weight:800;background:var(--surface2);border-top:2px solid var(--border)}
+/* Разбивка по дням в отчёте */
+.day-section{margin-bottom:18px}
+.day-header{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:8px 0 4px;border-bottom:2px solid var(--border);margin-bottom:4px}
+.report-filter-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.report-filter-row>div{flex:1 1 160px}
 .app.registrar-mode{grid-template-columns:1fr;max-width:720px;margin:0 auto}
-@media (max-width:1100px){.app{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:640px){.employee-card{grid-template-columns:1fr}.stats{grid-template-columns:1fr}.pin-keypad{max-width:100%}}
+@media(max-width:1100px){.app{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.stats-5{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.employee-card{grid-template-columns:1fr}.stats,.stats-5{grid-template-columns:1fr}.pin-keypad{max-width:100%}}
 </style>
 </head>
 <body>
-<div class="app registrar-mode" id="appRoot">
-<section class="panel left">
-  <div class="header">
-    <div class="brand">
-      <div class="logo">🍽</div>
-      <div>
-        <div class="title">Питание Персонала</div>
-        <div class="subtitle" id="siteSubtitle">Подойдите к камере</div>
-      </div>
-    </div>
-    <span class="registrar-only mini" id="modeLabel">Режим регистратора</span>
+
+<!-- ── Попап «Приятного аппетита!» ─────────────────────────── -->
+<div class="appetite-overlay" id="appetiteOverlay">
+  <div class="appetite-box">
+    <div class="appetite-emoji">🍽️</div>
+    <div class="appetite-title">Приятного аппетита!</div>
+    <div class="appetite-name" id="appetiteName"></div>
+    <div class="appetite-meal" id="appetiteMeal"></div>
   </div>
-
-  <div class="mode-bar registrar-only">
-    <span class="mini">Сотрудник подходит к камере — система распознаёт автоматически</span>
-    <button class="btn btn-ghost" id="adminModeBtn" type="button">⚙ Администрирование</button>
-  </div>
-  <div class="mode-bar admin-only hidden-mode">
-    <button class="btn btn-primary" id="registrarModeBtn" type="button">← К регистратору</button>
-  </div>
-
-  <div class="kiosk-banner" id="kioskBanner">Подойдите к камере для распознавания</div>
-  <div class="recognized-name registrar-only hidden" id="recognizedName"></div>
-  <div class="recognized-meta registrar-only hidden" id="recognizedMeta"></div>
-
-  <div class="video-wrap" id="videoWrap">
-    <div class="status-pip" id="faceStatus">Загрузка…</div>
-    <div class="liveness-pip" id="livenessPip">Подтверждение присутствия…</div>
-    <video id="video" autoplay playsinline muted></video>
-    <div class="face-box" id="faceBox"></div>
-    <canvas class="hidden" id="captureCanvas"></canvas>
-    <div class="camera-overlay"></div>
-  </div>
-
-  <div class="registrar-only" style="margin-top:14px;">
-    <button class="btn btn-success btn-meal" id="getMealBtn" type="button" disabled>Спасибо
-<span class="meal-type" id="mealTypeHint">—</span></button>
-  </div>
-
-  <div class="card admin-only hidden-mode" style="margin-top:14px;" id="connectionCard">
-    <div class="section-title">Точка обслуживания</div>
-    <div class="form-grid">
-      <div><label for="siteName">Название точки</label><input id="siteName" placeholder="Столовая 1" maxlength="60" /></div>
-      <div><label for="operatorName">Оператор</label><input id="operatorName" placeholder="Администратор столовой" maxlength="60" /></div>
-    </div>
-    <div class="toolbar">
-      <button class="btn btn-primary" id="saveConfigBtn" type="button">Сохранить</button>
-      <button class="btn" id="testApiBtn" type="button">Проверить связь</button>
-      <button class="btn" id="syncBtn" type="button">Обновить данные</button>
-    </div>
-    <div class="status" id="statusLine">Бэкенд подключён. Можно работать.</div>
-  </div>
-
-  <div class="card admin-only hidden-mode" style="margin-top:14px;">
-    <div class="section-title">Сотрудник</div>
-    <div class="form-grid">
-      <div><label for="employeeSearch">Поиск</label><input id="employeeSearch" list="employeeList" placeholder="ФИО, ID, подразделение" maxlength="80" /><datalist id="employeeList"></datalist></div>
-      <div><label for="employeeSelect">Выбор из списка</label><select id="employeeSelect"><option value="">— Выберите —</option></select></div>
-    </div>
-    <div class="toolbar">
-      <button class="btn btn-primary" id="newEmployeeBtn" type="button">+ Новый сотрудник</button>
-      <button class="btn btn-success" id="saveEmployeeBtn" type="button">Сохранить с Face ID</button>
-      <button class="btn" id="verifyFaceBtn" type="button">Проверить лицо</button>
-      <button class="btn" id="captureBtn" type="button">Сделать фото</button>
-    </div>
-    <div class="employee-card card" style="margin-top:8px;">
-      <img id="employeePhoto" class="avatar" alt="" />
-      <div class="meta">
-        <strong id="employeeName">Сотрудник не выбран</strong>
-        <div class="hint" id="employeeInfo">Добавьте сотрудника и снимите эталон лица с камеры.</div>
-        <div class="mini" id="matchInfo">Совпадение: —</div>
-      </div>
-    </div>
-    <div class="form-grid" id="employeeEditor" style="margin-top:12px;">
-      <div><label for="empName">ФИО *</label><input id="empName" maxlength="120" /></div>
-      <div><label for="empId">Табельный номер</label><input id="empId" maxlength="40" /></div>
-      <div><label for="empDept">Подразделение</label><input id="empDept" maxlength="80" /></div>
-      <div><label for="empPos">Должность</label><input id="empPos" maxlength="80" /></div>
-    </div>
-  </div>
-</section>
-
-<aside class="panel right admin-only hidden-mode">
-  <div class="tabs">
-    <button class="btn btn-primary" data-tab="employees" type="button">Сотрудники</button>
-    <button class="btn" data-tab="journal" type="button">Журнал</button>
-    <button class="btn" data-tab="reports" type="button">Отчёты</button>
-    <button class="btn" data-tab="settings" type="button">Настройки</button>
-  </div>
-
-  <section id="tab-employees"><div class="card"><div class="section-title">База сотрудников</div><div class="table-wrap"><table><thead><tr><th>Фото</th><th>ФИО</th><th>ID</th><th>Подразделение</th><th></th></tr></thead><tbody id="employeesBody"></tbody></table></div></div></section>
-
-  <section id="tab-journal" class="hidden">
-    <div class="card">
-      <div class="section-title">Фильтры</div>
-      <div class="filters">
-        <div style="flex:1 1 180px;"><label for="filterText">Сотрудник</label><input id="filterText" placeholder="Поиск" /></div>
-        <div style="flex:1 1 160px;"><label for="filterDate">Дата</label><input id="filterDate" type="date" /></div>
-        <div style="flex:1 1 150px;"><label for="filterMeal">Тип</label><select id="filterMeal"><option value="">Все</option><option>Завтрак</option><option>Обед</option><option>Ужин</option></select></div>
-        <div style="display:flex;align-items:end;"><button class="btn" id="resetFiltersBtn" type="button">Сбросить</button></div>
-      </div>
-    </div>
-    <div class="stats" style="margin-top:14px;">
-      <div class="stat"><div class="mini">Всего</div><div class="n" id="statTotal">0</div></div>
-      <div class="stat"><div class="mini">Завтраков</div><div class="n" id="statBreakfast">0</div></div>
-      <div class="stat"><div class="mini">Обедов</div><div class="n" id="statLunch">0</div></div>
-      <div class="stat"><div class="mini">Ужинов</div><div class="n" id="statDinner">0</div></div>
-    </div>
-    <div class="card" style="margin-top:14px;"><div class="section-title">История выдачи</div><div class="table-wrap"><table><thead><tr><th>Дата/время</th><th>Сотрудник</th><th>Подразделение</th><th>Питание</th><th>Точка</th></tr></thead><tbody id="journalBody"></tbody></table></div></div>
-  </section>
-
-  <section id="tab-reports" class="hidden"><div class="card"><div class="section-title">Сводка за период</div><div class="filters"><div><label for="reportDateFrom">С</label><input id="reportDateFrom" type="date" /></div><div><label for="reportDateTo">По</label><input id="reportDateTo" type="date" /></div><div><label for="reportDept">Подразделение</label><input id="reportDept" placeholder="Все" maxlength="80" /></div><div style="display:flex;align-items:end;"><button class="btn btn-primary" id="buildReportBtn" type="button">Сформировать</button></div></div><div id="reportContent" style="margin-top:14px;"></div></div></section>
-
-  <section id="tab-settings" class="hidden">
-    <div class="card">
-      <div class="section-title">PIN администратора</div>
-      <p class="mini">PIN запрашивается при входе в режим администрирования. По умолчанию <code>1234</code> — обязательно смените при первом запуске.</p>
-      <div class="form-grid" style="margin-top:10px;">
-        <div><label for="adminPin">Новый PIN (4–6 цифр)</label><input id="adminPin" type="password" inputmode="numeric" maxlength="6" placeholder="••••" /></div>
-        <div style="display:flex;align-items:end;"><button class="btn btn-primary" id="savePinBtn" type="button">Сохранить PIN</button></div>
-      </div>
-    </div>
-    <div class="card" style="margin-top:14px;">
-      <div class="section-title">Экспорт</div>
-      <div class="toolbar"><button class="btn" id="exportBtn" type="button">Экспорт CSV (журнал)</button></div>
-    </div>
-    <div class="card" style="margin-top:14px;">
-      <div class="section-title">Бэкенд</div>
-      <p class="mini">URL Google Apps Script зашит в код. Чтобы поменять — отредактируйте константу <code>API_URL</code> в <code>public/kiosk.html</code> и перезаливайте сайт.</p>
-      <div class="toolbar"><button class="btn" id="openWizardBtn" type="button">Показать инструкцию по бэкенду</button></div>
-    </div>
-  </section>
-</aside>
 </div>
 
+<!-- ── Модальное окно «Доп. питание» ───────────────────────── -->
+<!-- Открывается по кнопке «+ Доп. питание», сотрудник указывает описание -->
+<div class="modal-overlay" id="extraMealModal">
+  <div class="modal-box">
+    <div class="modal-title">➕ Доп. питание</div>
+    <div class="modal-sub" id="extraModalSub">Укажите, что именно выдаётся</div>
+    <label for="extraMealNote" style="margin-top:4px;">Описание (обязательно)</label>
+    <input id="extraMealNote" placeholder="Например: сок, хлеб, кефир, полдник…" maxlength="120"/>
+    <div class="modal-actions">
+      <button class="btn btn-success" id="extraMealConfirmBtn" type="button" disabled>✓ Подтвердить</button>
+      <button class="btn" id="extraMealCancelBtn" type="button">Отмена</button>
+    </div>
+    <div class="status" id="extraMealStatus"></div>
+  </div>
+</div>
+
+<div class="app registrar-mode" id="appRoot">
+  <section class="panel left">
+    <div class="header">
+      <div class="brand">
+        <div class="logo">🍽</div>
+        <div>
+          <div class="title">Питание Персонала</div>
+          <div class="subtitle" id="siteSubtitle">Подойдите к камере</div>
+        </div>
+      </div>
+      <span class="registrar-only mini" id="modeLabel">Режим регистратора</span>
+    </div>
+    <div class="mode-bar registrar-only">
+      <span class="mini">Сотрудник подходит к камере — система распознаёт автоматически</span>
+      <button class="btn btn-ghost" id="adminModeBtn" type="button">⚙ Администрирование</button>
+    </div>
+    <div class="mode-bar admin-only hidden-mode">
+      <button class="btn btn-primary" id="registrarModeBtn" type="button">← К регистратору</button>
+    </div>
+
+    <div class="kiosk-banner" id="kioskBanner">Подойдите к камере для распознавания</div>
+    <div class="recognized-name registrar-only hidden" id="recognizedName"></div>
+    <div class="recognized-meta registrar-only hidden" id="recognizedMeta"></div>
+
+    <div class="video-wrap">
+      <div class="status-pip" id="faceStatus">Загрузка…</div>
+      <div class="liveness-pip" id="livenessPip">Подтверждение…</div>
+      <video id="video" autoplay playsinline muted></video>
+      <div class="face-box" id="faceBox"></div>
+      <canvas class="hidden" id="captureCanvas"></canvas>
+      <div class="camera-overlay"></div>
+    </div>
+
+    <!-- Кнопки выдачи питания -->
+    <div class="registrar-only" style="margin-top:14px;">
+      <!-- Основная кнопка — текущий тип питания по расписанию -->
+      <button class="btn btn-success btn-meal" id="getMealBtn" type="button" disabled>
+        Получить питание <span id="mealTypeHint" style="font-size:15px;opacity:.85;margin-left:6px;"></span>
+      </button>
+      <!-- Отдельная кнопка «+ Доп. питание» — всегда доступна после распознавания -->
+      <!-- Нажатие открывает модальное окно с полем описания -->
+      <button class="btn btn-extra hidden" id="extraMealBtn" type="button">
+        ➕ Доп. питание <span style="font-size:12px;opacity:.7;margin-left:4px;">(перекус, кефир…)</span>
+      </button>
+    </div>
+
+    <div class="card admin-only hidden-mode" style="margin-top:14px;">
+      <div class="section-title">Точка обслуживания</div>
+      <div class="form-grid">
+        <div><label for="siteName">Название точки</label><input id="siteName" placeholder="Столовая 1" maxlength="60"/></div>
+        <div><label for="operatorName">Оператор</label><input id="operatorName" placeholder="Администратор" maxlength="60"/></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn btn-primary" id="saveConfigBtn" type="button">Сохранить</button>
+        <button class="btn" id="testApiBtn" type="button">Проверить связь</button>
+        <button class="btn" id="syncBtn" type="button">Обновить данные</button>
+      </div>
+      <div class="status" id="statusLine">Бэкенд подключён.</div>
+    </div>
+
+    <div class="card admin-only hidden-mode" style="margin-top:14px;">
+      <div class="section-title">Сотрудник</div>
+      <div class="form-grid">
+        <div><label for="employeeSearch">Поиск</label><input id="employeeSearch" list="employeeList" placeholder="ФИО, ID, подразделение" maxlength="80"/><datalist id="employeeList"></datalist></div>
+        <div><label for="employeeSelect">Выбор из списка</label><select id="employeeSelect"><option value="">— Выберите —</option></select></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn btn-primary" id="newEmployeeBtn" type="button">+ Новый</button>
+        <button class="btn btn-success" id="saveEmployeeBtn" type="button">Сохранить с Face ID</button>
+        <button class="btn" id="verifyFaceBtn" type="button">Проверить лицо</button>
+        <button class="btn" id="captureBtn" type="button">Фото</button>
+      </div>
+      <div class="employee-card card" style="margin-top:8px;">
+        <img id="employeePhoto" class="avatar" alt=""/>
+        <div class="meta">
+          <strong id="employeeName">Сотрудник не выбран</strong>
+          <div class="hint" id="employeeInfo">Добавьте сотрудника и снимите эталон лица.</div>
+          <div class="mini" id="matchInfo">Совпадение: —</div>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-top:12px;">
+        <div><label for="empName">ФИО *</label><input id="empName" maxlength="120"/></div>
+        <div><label for="empId">Таб. номер</label><input id="empId" maxlength="40"/></div>
+        <div><label for="empDept">Подразделение</label><input id="empDept" maxlength="80"/></div>
+        <div><label for="empPos">Должность</label><input id="empPos" maxlength="80"/></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel right admin-only hidden-mode">
+    <div class="tabs">
+      <button class="btn btn-primary" data-tab="employees" type="button">Сотрудники</button>
+      <button class="btn" data-tab="journal" type="button">Журнал</button>
+      <button class="btn" data-tab="reports" type="button">Отчёты</button>
+      <button class="btn" data-tab="settings" type="button">Настройки</button>
+    </div>
+
+    <!-- ── Вкладка: Сотрудники ── -->
+    <section id="tab-employees">
+      <div class="card">
+        <div class="section-title">База сотрудников</div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Фото</th><th>ФИО</th><th>ID</th><th>Подразделение</th><th></th></tr></thead>
+          <tbody id="employeesBody"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Вкладка: Журнал ── -->
+    <section id="tab-journal" class="hidden">
+      <div class="card">
+        <div class="section-title">Фильтры</div>
+        <div class="filters">
+          <div style="flex:1 1 180px;"><label for="filterText">Сотрудник (ФИО)</label><input id="filterText" placeholder="Иванов…"/></div>
+          <div style="flex:1 1 160px;"><label for="filterDate">Дата</label><input id="filterDate" type="date"/></div>
+          <div style="flex:1 1 150px;"><label for="filterMeal">Тип</label>
+            <select id="filterMeal">
+              <option value="">Все</option>
+              <option>Завтрак</option><option>Обед</option><option>Ужин</option><option value="extra">Доп.</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:end;"><button class="btn" id="resetFiltersBtn" type="button">Сбросить</button></div>
+        </div>
+      </div>
+      <div class="stats-5" style="margin-top:14px;">
+        <div class="stat"><div class="mini">Всего</div><div class="n" id="statTotal">0</div></div>
+        <div class="stat"><div class="mini">Завтраков</div><div class="n" id="statBreakfast">0</div></div>
+        <div class="stat"><div class="mini">Обедов</div><div class="n" id="statLunch">0</div></div>
+        <div class="stat"><div class="mini">Ужинов</div><div class="n" id="statDinner">0</div></div>
+        <div class="stat"><div class="mini">Доп.</div><div class="n" id="statExtra">0</div></div>
+      </div>
+      <div class="card" style="margin-top:14px;">
+        <div class="section-title">История выдачи</div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Дата/время</th><th>Сотрудник</th><th>Подр.</th><th>Питание</th><th>Описание</th><th>Точка</th></tr></thead>
+          <tbody id="journalBody"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Вкладка: Отчёты ── -->
+    <section id="tab-reports" class="hidden">
+      <div class="card">
+        <div class="section-title">Параметры отчёта</div>
+        <!-- Фильтры: период + подразделение + ФИО -->
+        <div class="report-filter-row">
+          <div><label for="reportDateFrom">С</label><input id="reportDateFrom" type="date"/></div>
+          <div><label for="reportDateTo">По</label><input id="reportDateTo" type="date"/></div>
+          <div><label for="reportDept">Подразделение</label><input id="reportDept" placeholder="Все" maxlength="80"/></div>
+          <!-- НОВОЕ: фильтр по конкретному сотруднику (ФИО) -->
+          <div><label for="reportEmp">Сотрудник (ФИО)</label><input id="reportEmp" placeholder="Все" maxlength="120" list="reportEmpList"/><datalist id="reportEmpList"></datalist></div>
+        </div>
+        <!-- Переключатель режима группировки -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text);font-weight:600;font-size:13px;">
+            <input type="radio" name="reportMode" value="summary" checked style="width:auto;min-height:auto;"> Сводка по сотрудникам
+          </label>
+          <!-- НОВОЕ: разбивка по дням -->
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text);font-weight:600;font-size:13px;">
+            <input type="radio" name="reportMode" value="byday" style="width:auto;min-height:auto;"> По дням
+          </label>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="buildReportBtn" type="button">📊 Сформировать</button>
+          <!-- НОВОЕ: экспорт в xlsx -->
+          <button class="btn" id="exportReportXlsxBtn" type="button">📥 Excel (.xlsx)</button>
+          <button class="btn" id="exportReportBtn" type="button">📄 CSV</button>
+        </div>
+        <div id="reportContent" style="margin-top:16px;"></div>
+      </div>
+    </section>
+
+    <!-- ── Вкладка: Настройки ── -->
+    <section id="tab-settings" class="hidden">
+      <div class="card">
+        <div class="section-title">PIN администратора</div>
+        <p class="mini">По умолчанию <code>1234</code> — смените при первом запуске.</p>
+        <div class="form-grid" style="margin-top:10px;">
+          <div><label for="adminPin">Новый PIN (4–6 цифр)</label><input id="adminPin" type="password" inputmode="numeric" maxlength="6" placeholder="••••"/></div>
+          <div style="display:flex;align-items:end;"><button class="btn btn-primary" id="savePinBtn" type="button">Сохранить PIN</button></div>
+        </div>
+      </div>
+
+      <!-- Стоимость питания -->
+      <div class="card" style="margin-top:14px;">
+        <div class="section-title">Стоимость питания (необязательно)</div>
+        <p class="mini">Если поле пустое — сумма по этому типу не рассчитывается в отчётах.</p>
+        <div class="form-grid" style="margin-top:10px;">
+          <div><label for="priceBr">Завтрак (₸)</label><input id="priceBr" type="number" min="0" step="0.01" placeholder="800"/></div>
+          <div><label for="priceLu">Обед (₸)</label><input id="priceLu" type="number" min="0" step="0.01" placeholder="1200"/></div>
+          <div><label for="priceDi">Ужин (₸)</label><input id="priceDi" type="number" min="0" step="0.01" placeholder="900"/></div>
+          <div><label for="priceEx">Доп. питание (₸)</label><input id="priceEx" type="number" min="0" step="0.01" placeholder="500"/></div>
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-primary" id="savePricesBtn" type="button">Сохранить цены</button>
+        </div>
+        <div class="status" id="pricesStatus"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="section-title">Экспорт журнала</div>
+        <div class="toolbar">
+          <button class="btn" id="exportBtn" type="button">📄 CSV (журнал)</button>
+          <button class="btn" id="exportJournalXlsxBtn" type="button">📥 Excel (журнал)</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="section-title">Бэкенд</div>
+        <p class="mini">URL Apps Script зашит в константу <code>API_URL</code> в начале скрипта.</p>
+        <div class="toolbar"><button class="btn" id="openWizardBtn" type="button">Инструкция по бэкенду</button></div>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<!-- Мастер первоначальной настройки -->
 <div class="setup-wizard hidden" id="setupWizard">
   <div class="setup-box">
     <div class="section-title">Настройка точки</div>
-    <p class="mini" style="line-height:1.6;">Бэкенд (Google Sheets) уже подключён. Заполните данные точки — это попадёт в журнал каждой выдачи.</p>
+    <p class="mini" style="line-height:1.6;">Заполните данные точки — они попадут в журнал каждой выдачи.</p>
     <div style="margin-top:14px;">
       <label for="wizSiteName">Название точки</label>
-      <input id="wizSiteName" placeholder="Столовая №1" style="margin-bottom:10px;" maxlength="60" />
+      <input id="wizSiteName" placeholder="Столовая №1" style="margin-bottom:10px;" maxlength="60"/>
       <label for="wizOperator">Оператор</label>
-      <input id="wizOperator" placeholder="Администратор" maxlength="60" />
+      <input id="wizOperator" placeholder="Администратор" maxlength="60"/>
     </div>
     <div class="setup-actions">
       <button class="btn btn-primary" id="wizSaveBtn" type="button">Сохранить и начать</button>
     </div>
     <div class="status" id="wizStatus"></div>
     <details style="margin-top:14px;">
-      <summary class="mini" style="cursor:pointer;">Как поменять бэкенд (для администратора)</summary>
+      <summary class="mini" style="cursor:pointer;">Как поменять бэкенд</summary>
       <p class="mini" style="line-height:1.7;margin-top:8px;">
-        1. Создайте <a href="https://sheets.google.com" target="_blank" rel="noopener">Google Таблицу</a>.<br>
-        2. <strong>Расширения → Apps Script</strong> → вставьте код из <code>public/apps-script/Code.gs</code>.<br>
-        3. Запустите функцию <code>setupSheets</code>.<br>
-        4. <strong>Развернуть → Веб-приложение</strong>, доступ: <strong>Все</strong>. Скопируйте URL <code>/exec</code>.<br>
-        5. Откройте <code>public/kiosk.html</code>, замените константу <code>API_URL</code> на ваш URL, перезагрузите.
+        1. Создайте Google Таблицу.<br>
+        2. Расширения → Apps Script → вставьте Code.gs.<br>
+        3. Запустите <code>setupSheets</code>.<br>
+        4. Развернуть → Веб-приложение, доступ: Все. Скопируйте URL.<br>
+        5. Замените <code>API_URL</code> в index.html.
       </p>
     </details>
   </div>
@@ -256,8 +396,11 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 <div class="pin-modal hidden" id="pinModal">
   <div class="pin-box">
     <div class="section-title">Введите PIN</div>
-    <p class="mini">Доступ к режиму администратора</p>
-    <div class="pin-dots" id="pinDots"><span class="pin-dot"></span><span class="pin-dot"></span><span class="pin-dot"></span><span class="pin-dot"></span></div>
+    <p class="mini">Доступ к администрированию</p>
+    <div class="pin-dots" id="pinDots">
+      <span class="pin-dot"></span><span class="pin-dot"></span>
+      <span class="pin-dot"></span><span class="pin-dot"></span>
+    </div>
     <div class="status err" id="pinError"></div>
     <div class="pin-keypad" id="pinKeypad"></div>
     <button class="btn" id="pinCancelBtn" type="button" style="margin-top:14px;">Отмена</button>
@@ -265,11 +408,24 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 </div>
 
 <script>
+/* =================================================================
+   Питание Персонала v3.0 — клиентская часть
+   Изменения v3.0:
+     1. Спиннер-блокировка кнопки при двойном клике (debounce)
+     2. Фильтр отчёта по ФИО сотрудника
+     3. Экспорт отчёта и журнала в .xlsx (SheetJS)
+     4. Режим «По дням» в отчёте
+     5. Кнопка «+ Доп. питание» с модальным окном описания
+   ================================================================= */
+
 const API_URL = 'https://script.google.com/macros/s/AKfycbzUsOmOm_D1G9rt3NQq5YJ4CIS356pR9s_sA7JUm9vPPpUBOwL8f3kY9J3TUbSS4S0m/exec';
-const SETTINGS_KEY = 'meal_kiosk_settings_v6';
+const SETTINGS_KEY = 'meal_kiosk_settings_v7';
 const DEFAULT_PIN  = '1234';
+
+// Окна приёма пищи (минуты от полуночи)
 const MEAL_WINDOWS = { 'Завтрак':[360,780], 'Обед':[781,980], 'Ужин':[981,1380] };
-const COOLDOWN_MS = 60 * 60 * 1000;
+
+// Параметры антиспуфинга
 const REQUIRED_CONSECUTIVE = 3;
 const FRAME_INTERVAL_MS    = 600;
 const DIST_OK              = 0.45;
@@ -278,517 +434,983 @@ const MIN_DESCRIPTOR_VAR   = 0.015;
 const EAR_BLINK_THRESHOLD  = 0.21;
 const MIN_FACE_RATIO       = 0.18;
 
+// ── Глобальное состояние ──────────────────────────────────────────
 const state = {
-  employees:[], meals:[], selectedEmployeeId:null, capturedPhoto:null,
-  stream:null, activeTab:'employees', verified:false, matchScore:null,
-  modelsLoaded:false, uiMode:'registrar', scanTimer:null, scanBusy:false,
+  employees:[], meals:[],
+  selectedEmployeeId:null, capturedPhoto:null,
+  stream:null, activeTab:'employees',
+  verified:false, matchScore:null,
+  modelsLoaded:false, uiMode:'registrar',
+  scanTimer:null, scanBusy:false,
   setupDone:false, pinInput:'',
-  pendingMatchId:null, pendingFrames:[], pendingBlinkSeen:false, lastEAR:null
+  pendingMatchId:null, pendingFrames:[], pendingBlinkSeen:false, lastEAR:null,
+  prices:{ br:null, lu:null, di:null, ex:null },
+  // Данные последнего сформированного отчёта (для экспорта)
+  lastReport:{ rows:[], totals:{}, mode:'summary', from:'', to:'' }
 };
 
+// ── Кэш DOM-элементов ─────────────────────────────────────────────
 const els = {
-  appRoot:document.getElementById('appRoot'),
-  siteSubtitle:document.getElementById('siteSubtitle'),
-  statusLine:document.getElementById('statusLine'),
-  siteName:document.getElementById('siteName'),operatorName:document.getElementById('operatorName'),
-  kioskBanner:document.getElementById('kioskBanner'),recognizedName:document.getElementById('recognizedName'),recognizedMeta:document.getElementById('recognizedMeta'),
-  getMealBtn:document.getElementById('getMealBtn'),mealTypeHint:document.getElementById('mealTypeHint'),
-  video:document.getElementById('video'),faceBox:document.getElementById('faceBox'),faceStatus:document.getElementById('faceStatus'),
-  livenessPip:document.getElementById('livenessPip'),captureCanvas:document.getElementById('captureCanvas'),
-  employeeSearch:document.getElementById('employeeSearch'),employeeList:document.getElementById('employeeList'),employeeSelect:document.getElementById('employeeSelect'),
-  employeeName:document.getElementById('employeeName'),employeeInfo:document.getElementById('employeeInfo'),employeePhoto:document.getElementById('employeePhoto'),matchInfo:document.getElementById('matchInfo'),
-  empName:document.getElementById('empName'),empId:document.getElementById('empId'),empDept:document.getElementById('empDept'),empPos:document.getElementById('empPos'),
-  journalBody:document.getElementById('journalBody'),employeesBody:document.getElementById('employeesBody'),
-  filterText:document.getElementById('filterText'),filterDate:document.getElementById('filterDate'),filterMeal:document.getElementById('filterMeal'),
-  statTotal:document.getElementById('statTotal'),statBreakfast:document.getElementById('statBreakfast'),statLunch:document.getElementById('statLunch'),statDinner:document.getElementById('statDinner'),
-  reportDateFrom:document.getElementById('reportDateFrom'),reportDateTo:document.getElementById('reportDateTo'),reportDept:document.getElementById('reportDept'),reportContent:document.getElementById('reportContent'),
-  setupWizard:document.getElementById('setupWizard'),wizSiteName:document.getElementById('wizSiteName'),wizOperator:document.getElementById('wizOperator'),wizStatus:document.getElementById('wizStatus'),
-  pinModal:document.getElementById('pinModal'),pinDots:document.getElementById('pinDots'),pinError:document.getElementById('pinError'),pinKeypad:document.getElementById('pinKeypad'),adminPin:document.getElementById('adminPin')
+  appRoot:        document.getElementById('appRoot'),
+  siteSubtitle:   document.getElementById('siteSubtitle'),
+  statusLine:     document.getElementById('statusLine'),
+  siteName:       document.getElementById('siteName'),
+  operatorName:   document.getElementById('operatorName'),
+  kioskBanner:    document.getElementById('kioskBanner'),
+  recognizedName: document.getElementById('recognizedName'),
+  recognizedMeta: document.getElementById('recognizedMeta'),
+  getMealBtn:     document.getElementById('getMealBtn'),
+  mealTypeHint:   document.getElementById('mealTypeHint'),
+  extraMealBtn:   document.getElementById('extraMealBtn'),
+  video:          document.getElementById('video'),
+  faceBox:        document.getElementById('faceBox'),
+  faceStatus:     document.getElementById('faceStatus'),
+  livenessPip:    document.getElementById('livenessPip'),
+  captureCanvas:  document.getElementById('captureCanvas'),
+  employeeSearch: document.getElementById('employeeSearch'),
+  employeeList:   document.getElementById('employeeList'),
+  employeeSelect: document.getElementById('employeeSelect'),
+  employeeName:   document.getElementById('employeeName'),
+  employeeInfo:   document.getElementById('employeeInfo'),
+  employeePhoto:  document.getElementById('employeePhoto'),
+  matchInfo:      document.getElementById('matchInfo'),
+  empName:        document.getElementById('empName'),
+  empId:          document.getElementById('empId'),
+  empDept:        document.getElementById('empDept'),
+  empPos:         document.getElementById('empPos'),
+  journalBody:    document.getElementById('journalBody'),
+  employeesBody:  document.getElementById('employeesBody'),
+  filterText:     document.getElementById('filterText'),
+  filterDate:     document.getElementById('filterDate'),
+  filterMeal:     document.getElementById('filterMeal'),
+  statTotal:      document.getElementById('statTotal'),
+  statBreakfast:  document.getElementById('statBreakfast'),
+  statLunch:      document.getElementById('statLunch'),
+  statDinner:     document.getElementById('statDinner'),
+  statExtra:      document.getElementById('statExtra'),
+  reportDateFrom: document.getElementById('reportDateFrom'),
+  reportDateTo:   document.getElementById('reportDateTo'),
+  reportDept:     document.getElementById('reportDept'),
+  reportEmp:      document.getElementById('reportEmp'),
+  reportEmpList:  document.getElementById('reportEmpList'),
+  reportContent:  document.getElementById('reportContent'),
+  setupWizard:    document.getElementById('setupWizard'),
+  wizSiteName:    document.getElementById('wizSiteName'),
+  wizOperator:    document.getElementById('wizOperator'),
+  wizStatus:      document.getElementById('wizStatus'),
+  pinModal:       document.getElementById('pinModal'),
+  pinDots:        document.getElementById('pinDots'),
+  pinError:       document.getElementById('pinError'),
+  pinKeypad:      document.getElementById('pinKeypad'),
+  adminPin:       document.getElementById('adminPin'),
+  priceBr:        document.getElementById('priceBr'),
+  priceLu:        document.getElementById('priceLu'),
+  priceDi:        document.getElementById('priceDi'),
+  priceEx:        document.getElementById('priceEx'),
+  pricesStatus:   document.getElementById('pricesStatus'),
+  appetiteOverlay:document.getElementById('appetiteOverlay'),
+  appetiteName:   document.getElementById('appetiteName'),
+  appetiteMeal:   document.getElementById('appetiteMeal'),
+  extraMealModal: document.getElementById('extraMealModal'),
+  extraModalSub:  document.getElementById('extraModalSub'),
+  extraMealNote:  document.getElementById('extraMealNote'),
+  extraMealConfirmBtn: document.getElementById('extraMealConfirmBtn'),
+  extraMealCancelBtn:  document.getElementById('extraMealCancelBtn'),
+  extraMealStatus:     document.getElementById('extraMealStatus'),
 };
+
 let storedPin = DEFAULT_PIN;
 
-/* ---------- утилиты ---------- */
-function generateUUID(){return crypto?.randomUUID?crypto.randomUUID():'id_'+Math.random().toString(36).slice(2)+'_'+Date.now()}
-function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
-function nowMinutes(){const d=new Date();return d.getHours()*60+d.getMinutes()}
-function getCurrentMealType(){const m=nowMinutes();for(const [meal,[from,to]] of Object.entries(MEAL_WINDOWS)){if(m>=from&&m<=to)return meal}return null}
-function escapeHtml(s){return String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
-function csvEscape(v){const s=String(v??'');return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
-function formatDateTime(iso){if(!iso)return'—';const d=new Date(iso);return `${d.toLocaleDateString('ru-RU')} ${d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`}
-function badgeClass(meal){return meal==='Завтрак'?'b-breakfast':meal==='Обед'?'b-lunch':'b-dinner'}
-function parseFaceDescriptor(raw){if(!raw)return null;if(Array.isArray(raw)&&raw.length===128)return new Float32Array(raw);if(typeof raw==='string'&&raw){try{const arr=raw.split(',').map(Number);if(arr.length===128&&!arr.some(isNaN))return new Float32Array(arr)}catch{}}return null}
-function employeesWithDescriptors(){return state.employees.map(emp=>{const desc=parseFaceDescriptor(emp.faceDescriptor);return desc?{emp,desc}:null}).filter(Boolean)}
-function getSelectedEmployee(){return state.employees.find(e=>(e.employeeId||e.id)===state.selectedEmployeeId)||null}
-function setKioskBanner(text,cls=''){els.kioskBanner.textContent=text;els.kioskBanner.className='kiosk-banner'+(cls?' '+cls:'')}
-function setStatus(text,cls=''){if(!els.statusLine)return;els.statusLine.textContent=text;els.statusLine.className='status'+(cls?' '+cls:'')}
-function setFaceStatus(t,cls=''){els.faceStatus.textContent=t;els.faceStatus.style.background=cls==='ok'?'rgba(27,127,82,.82)':cls==='warn'?'rgba(158,106,0,.82)':cls==='err'?'rgba(200,58,45,.82)':'rgba(13,21,32,.72)'}
-function updateSiteSubtitle(){const site=(els.siteName?.value||'').trim();els.siteSubtitle.textContent=site||'Подойдите к камере'}
+/* ── Утилиты ─────────────────────────────────────────────────── */
 
-/* ---------- сжатие фото для хранения в Google Sheets ---------- */
-function resizePhoto(dataUrl, maxSize) {
-  maxSize = maxSize || 200;
-  return new Promise(function(resolve) {
-    var img = new Image();
-    img.onload = function() {
-      var canvas = document.createElement('canvas');
-      var scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.5));
-    };
-    img.onerror = function() { resolve(dataUrl); };
-    img.src = dataUrl;
-  });
+const genUUID = () => crypto?.randomUUID?.() || 'id_'+Math.random().toString(36).slice(2)+'_'+Date.now();
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-/* ---------- последняя выдача ---------- */
-function lastMealForEmployee(empId){
-  let last=null;
-  for(const m of state.meals){
-    if(String(m.employeeId)!==String(empId))continue;
-    const t=Date.parse(m.timestamp);
-    if(!isNaN(t)&&(!last||t>Date.parse(last.timestamp)))last=m;
+function nowMinutes() { const d=new Date(); return d.getHours()*60+d.getMinutes(); }
+
+function getCurrentMealType() {
+  const m = nowMinutes();
+  for(const [meal,[f,t]] of Object.entries(MEAL_WINDOWS)) if(m>=f&&m<=t) return meal;
+  return null;
+}
+
+const esc = s => String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+function csvEsc(v) { const s=String(v??''); return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+
+function fmtDT(iso) {
+  if(!iso) return '—';
+  const d=new Date(iso);
+  return `${d.toLocaleDateString('ru-RU')} ${d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}`;
+}
+
+function fmtDate(s) {
+  // YYYY-MM-DD → ДД.ММ.ГГГГ
+  if(!s||s.length<10) return s||'';
+  const [y,mo,d] = s.slice(0,10).split('-');
+  return `${d}.${mo}.${y}`;
+}
+
+function badgeClass(meal,isExtra) {
+  if(isExtra===true||String(isExtra)==='true') return 'b-extra';
+  return meal==='Завтрак'?'b-breakfast':meal==='Обед'?'b-lunch':'b-dinner';
+}
+
+function parseFDesc(raw) {
+  if(!raw) return null;
+  if(Array.isArray(raw)&&raw.length===128) return new Float32Array(raw);
+  if(typeof raw==='string'&&raw){
+    try{ const a=raw.split(',').map(Number); if(a.length===128&&!a.some(isNaN)) return new Float32Array(a); }catch{}
   }
-  return last;
-}
-function cooldownLeftMs(empId){
-  const last=lastMealForEmployee(empId);if(!last)return 0;
-  const left=COOLDOWN_MS-(Date.now()-Date.parse(last.timestamp));
-  return left>0?left:0;
+  return null;
 }
 
-/* ---------- настройки ---------- */
-function saveSettings(){
-  localStorage.setItem(SETTINGS_KEY,JSON.stringify({
-    siteName:els.siteName.value.trim(),
-    operatorName:els.operatorName.value.trim(),
-    uiMode:state.uiMode,
-    setupDone:state.setupDone,
-    adminPin:storedPin
+const empsWithDesc = () => state.employees.map(emp=>{const d=parseFDesc(emp.faceDescriptor);return d?{emp,d}:null}).filter(Boolean);
+
+const getSel = () => state.employees.find(e=>(e.employeeId||e.id)===state.selectedEmployeeId)||null;
+
+const setKB = (t,c='') => { els.kioskBanner.textContent=t; els.kioskBanner.className='kiosk-banner'+(c?' '+c:''); };
+const setSt = (t,c='') => { if(els.statusLine){els.statusLine.textContent=t;els.statusLine.className='status'+(c?' '+c:'');} };
+const setFS = (t,c='') => { els.faceStatus.textContent=t; els.faceStatus.style.background=c==='ok'?'rgba(27,127,82,.82)':c==='warn'?'rgba(158,106,0,.82)':c==='err'?'rgba(200,58,45,.82)':'rgba(13,21,32,.72)'; };
+const updSub = () => { els.siteSubtitle.textContent=(els.siteName?.value||'').trim()||'Подойдите к камере'; };
+
+// Разбор цены: '' → null, иначе число
+const parsePrice = v => { if(v===''||v==null) return null; const n=parseFloat(v); return isNaN(n)||n<0?null:n; };
+
+// Форматирование суммы
+const fmtMoney = n => n===null||n===undefined ? '—' : n.toLocaleString('ru-RU',{minimumFractionDigits:0,maximumFractionDigits:2})+' ₸';
+
+/* ── Попап «Приятного аппетита» ──────────────────────────────── */
+
+function showAppetitePopup(empName, mealType, isExtra, note) {
+  // Строим текст типа питания; для доп. питания добавляем описание из note
+  let label = mealType;
+  if(isExtra) label = 'Доп. питание' + (note ? `: ${note}` : '');
+  els.appetiteName.textContent = empName||'';
+  els.appetiteMeal.textContent = label;
+  els.appetiteOverlay.classList.add('visible');
+  setTimeout(()=>els.appetiteOverlay.classList.remove('visible'), 2500);
+}
+
+/* ── Настройки ───────────────────────────────────────────────── */
+
+function saveSettings() {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+    siteName:     els.siteName.value.trim(),
+    operatorName: els.operatorName.value.trim(),
+    uiMode:       state.uiMode,
+    setupDone:    state.setupDone,
+    adminPin:     storedPin,
+    prices:       state.prices
   }));
 }
-function loadSettings(){
-  try{
-    const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}');
-    els.siteName.value=s.siteName||'';
-    els.operatorName.value=s.operatorName||'';
-    storedPin=s.adminPin||DEFAULT_PIN;
-    state.uiMode=s.uiMode==='admin'?'admin':'registrar';
-    state.setupDone=!!s.setupDone;
+
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}');
+    els.siteName.value     = s.siteName    ||'';
+    els.operatorName.value = s.operatorName||'';
+    storedPin              = s.adminPin    ||DEFAULT_PIN;
+    state.uiMode           = s.uiMode==='admin'?'admin':'registrar';
+    state.setupDone        = !!s.setupDone;
+    if(s.prices) {
+      state.prices = { br:s.prices.br??null, lu:s.prices.lu??null, di:s.prices.di??null, ex:s.prices.ex??null };
+      els.priceBr.value = s.prices.br??''; els.priceLu.value = s.prices.lu??'';
+      els.priceDi.value = s.prices.di??''; els.priceEx.value = s.prices.ex??'';
+    }
   }catch{}
 }
-function needsSetup(){return !state.setupDone || !els.siteName.value.trim()}
 
-/* ---------- API ---------- */
-function apiUrl(action){return API_URL+(API_URL.includes('?')?'&':'?')+'action='+encodeURIComponent(action)}
-async function apiGet(action,params={}){
-  const url=new URL(apiUrl(action));
-  Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=='')url.searchParams.set(k,v)});
-  const res=await fetch(url.toString());
-  if(!res.ok)throw new Error('Ошибка запроса ('+res.status+')');
-  return await res.json();
-}
-async function apiPost(action,payload){
-  const res=await fetch(apiUrl(action),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
-  if(!res.ok)throw new Error('Ошибка отправки ('+res.status+')');
-  return await res.json();
+const needsSetup = () => !state.setupDone||!els.siteName.value.trim();
+
+/* ── API ──────────────────────────────────────────────────────── */
+
+const apiUrl = a => API_URL+(API_URL.includes('?')?'&':'?')+'action='+encodeURIComponent(a);
+
+async function apiGet(action, params={}) {
+  const url = new URL(apiUrl(action));
+  Object.entries(params).forEach(([k,v])=>{ if(v!==undefined&&v!==null&&v!=='') url.searchParams.set(k,v); });
+  const r = await fetch(url.toString());
+  if(!r.ok) throw new Error('Ошибка запроса ('+r.status+')');
+  return r.json();
 }
 
-/* ---------- UI режимы ---------- */
-function setUiMode(mode){
-  state.uiMode=mode;
-  const isRegistrar=mode==='registrar';
-  els.appRoot.classList.toggle('registrar-mode',isRegistrar);
-  document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden-mode',isRegistrar));
-  document.querySelectorAll('.registrar-only').forEach(el=>el.classList.toggle('hidden-mode',!isRegistrar));
+async function apiPost(action, payload) {
+  const r = await fetch(apiUrl(action),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
+  if(!r.ok) throw new Error('Ошибка отправки ('+r.status+')');
+  return r.json();
+}
+
+/* ── UI-режимы ───────────────────────────────────────────────── */
+
+function setUiMode(mode) {
+  state.uiMode = mode;
+  const isR = mode==='registrar';
+  els.appRoot.classList.toggle('registrar-mode', isR);
+  document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden-mode',isR));
+  document.querySelectorAll('.registrar-only').forEach(el=>el.classList.toggle('hidden-mode',!isR));
   saveSettings();
-  if(isRegistrar){resetRegistrarSession();startAutoScan()}else{stopAutoScan();setTab('employees')}
+  if(isR){ resetRegistrarSession(); startAutoScan(); } else { stopAutoScan(); setTab('employees'); }
   updateMealButton();
 }
-function updateRecognizedDisplay(emp){
-  if(!emp||state.uiMode!=='registrar'){els.recognizedName.classList.add('hidden');els.recognizedMeta.classList.add('hidden');return}
-  els.recognizedName.classList.remove('hidden');els.recognizedMeta.classList.remove('hidden');
-  els.recognizedName.textContent=emp.fullName||'';
-  els.recognizedMeta.textContent=[emp.department,emp.staffId].filter(Boolean).join(' • ')||'';
+
+function updateRecognizedDisplay(emp) {
+  if(!emp||state.uiMode!=='registrar'){ els.recognizedName.classList.add('hidden'); els.recognizedMeta.classList.add('hidden'); return; }
+  els.recognizedName.classList.remove('hidden'); els.recognizedMeta.classList.remove('hidden');
+  els.recognizedName.textContent = emp.fullName||'';
+  els.recognizedMeta.textContent = [emp.department,emp.staffId].filter(Boolean).join(' • ')||'';
 }
-function updateMealButton(){
-  if(state.uiMode!=='registrar')return;
-  const meal=getCurrentMealType();
-  const emp=getSelectedEmployee();
-  const btn=els.getMealBtn;
-  if(!meal){btn.disabled=true;btn.textContent='Сейчас не время приёма пищи';return}
-  if(!emp||!state.verified){btn.disabled=true;btn.textContent='Спасибо за ('+meal+')';return}
-  const left=cooldownLeftMs(emp.employeeId||emp.id);
-  if(left>0){
-    const min=Math.ceil(left/60000);
-    btn.disabled=true;
-    btn.textContent='Уже выдано. Подождите '+min+' мин';
-    setKioskBanner(`${emp.fullName}: следующая выдача через ${min} мин`,'warn');
-    return;
+
+function updateMealButton() {
+  if(state.uiMode!=='registrar') return;
+  const meal = getCurrentMealType();
+  const emp  = getSel();
+  const btn  = els.getMealBtn;
+  const extraBtn = els.extraMealBtn;
+
+  if(!meal) {
+    btn.disabled=true; btn.innerHTML='Сейчас не время приёма пищи';
+    extraBtn.classList.add('hidden'); return;
   }
+  if(!emp||!state.verified) {
+    btn.disabled=true; btn.innerHTML='Получить питание ('+meal+') <span style="font-size:13px;opacity:.6">— нужно распознавание</span>';
+    extraBtn.classList.add('hidden'); return;
+  }
+  // Основная кнопка — всегда активна после распознавания
   btn.disabled=false;
-  btn.textContent='Спасибо за  ('+meal+')';
+  btn.innerHTML='✓ Получить <strong>'+meal+'</strong>';
+  // Кнопка «+ Доп. питание» — показываем после распознавания
+  extraBtn.classList.remove('hidden');
 }
-function resetRegistrarSession(){
-  state.selectedEmployeeId=null;state.verified=false;state.matchScore=null;state.capturedPhoto=null;
-  state.pendingMatchId=null;state.pendingFrames=[];state.pendingBlinkSeen=false;state.lastEAR=null;
-  els.faceBox.style.display='none';els.faceBox.classList.remove('pending');
+
+function resetRegistrarSession() {
+  state.selectedEmployeeId=null; state.verified=false; state.matchScore=null; state.capturedPhoto=null;
+  state.pendingMatchId=null; state.pendingFrames=[]; state.pendingBlinkSeen=false; state.lastEAR=null;
+  els.faceBox.style.display='none'; els.faceBox.classList.remove('pending');
   els.livenessPip.style.display='none';
-  updateRecognizedDisplay(null);updateMealButton();
-  setKioskBanner('Подойдите к камере для распознавания','');
-  if(state.uiMode==='registrar')startAutoScan();
+  updateRecognizedDisplay(null); updateMealButton();
+  setKB('Подойдите к камере для распознавания','');
+  if(state.uiMode==='registrar') startAutoScan();
 }
 
-/* ---------- мастер настройки ---------- */
-function showSetupWizard(){els.setupWizard.classList.remove('hidden')}
-function hideSetupWizard(){els.setupWizard.classList.add('hidden')}
-function setWizStatus(t,cls=''){els.wizStatus.textContent=t;els.wizStatus.className='status'+(cls?' '+cls:'')}
+/* ── Мастер настройки ────────────────────────────────────────── */
+const showSetupWizard = () => els.setupWizard.classList.remove('hidden');
+const hideSetupWizard = () => els.setupWizard.classList.add('hidden');
+const setWizSt = (t,c='') => { els.wizStatus.textContent=t; els.wizStatus.className='status'+(c?' '+c:''); };
 
-/* ---------- PIN ---------- */
-function showPinModal(){state.pinInput='';updatePinDots();els.pinError.textContent='';els.pinModal.classList.remove('hidden')}
-function hidePinModal(){els.pinModal.classList.add('hidden');state.pinInput=''}
-function updatePinDots(){els.pinDots.querySelectorAll('.pin-dot').forEach((dot,i)=>dot.classList.toggle('filled',i<state.pinInput.length))}
-function pinKeyPress(key){
-  if(key==='del'){state.pinInput=state.pinInput.slice(0,-1);els.pinError.textContent='';updatePinDots();return}
-  if(state.pinInput.length>=6)return;
-  state.pinInput+=key;updatePinDots();
-  if(state.pinInput.length===storedPin.length){
-    if(state.pinInput===storedPin){
-      hidePinModal();setUiMode('admin');
-      if(needsSetup())showSetupWizard();
-      syncData().catch(()=>{});
-    } else {
-      els.pinError.textContent='Неверный PIN';
-      setTimeout(()=>{state.pinInput='';updatePinDots();els.pinError.textContent=''},800);
-    }
+/* ── PIN ─────────────────────────────────────────────────────── */
+const showPinModal = () => { state.pinInput=''; updPinDots(); els.pinError.textContent=''; els.pinModal.classList.remove('hidden'); };
+const hidePinModal = () => { els.pinModal.classList.add('hidden'); state.pinInput=''; };
+
+function updPinDots() {
+  els.pinDots.querySelectorAll('.pin-dot').forEach((d,i)=>d.classList.toggle('filled',i<state.pinInput.length));
+}
+
+function pinKey(k) {
+  if(k==='del'){ state.pinInput=state.pinInput.slice(0,-1); els.pinError.textContent=''; updPinDots(); return; }
+  if(state.pinInput.length>=6) return;
+  state.pinInput+=k; updPinDots();
+  if(state.pinInput.length===storedPin.length) {
+    if(state.pinInput===storedPin){ hidePinModal(); setUiMode('admin'); if(needsSetup())showSetupWizard(); syncData().catch(()=>{}); }
+    else { els.pinError.textContent='Неверный PIN'; setTimeout(()=>{state.pinInput='';updPinDots();els.pinError.textContent='';},800); }
   }
 }
-function buildPinKeypad(){
+
+function buildPinKeypad() {
   els.pinKeypad.innerHTML='';
-  for(let i=1;i<=9;i++){const b=document.createElement('button');b.className='pin-key';b.type='button';b.textContent=i;b.addEventListener('click',()=>pinKeyPress(String(i)));els.pinKeypad.appendChild(b)}
-  const empty=document.createElement('div');els.pinKeypad.appendChild(empty);
-  const zero=document.createElement('button');zero.className='pin-key';zero.type='button';zero.textContent='0';zero.addEventListener('click',()=>pinKeyPress('0'));els.pinKeypad.appendChild(zero);
-  const del=document.createElement('button');del.className='pin-key';del.type='button';del.textContent='⌫';del.addEventListener('click',()=>pinKeyPress('del'));els.pinKeypad.appendChild(del);
+  for(let i=1;i<=9;i++){ const b=document.createElement('button'); b.className='pin-key';b.type='button';b.textContent=i; b.onclick=()=>pinKey(String(i)); els.pinKeypad.appendChild(b); }
+  els.pinKeypad.appendChild(document.createElement('div'));
+  const z=document.createElement('button'); z.className='pin-key';z.type='button';z.textContent='0';z.onclick=()=>pinKey('0');els.pinKeypad.appendChild(z);
+  const d=document.createElement('button'); d.className='pin-key';d.type='button';d.textContent='⌫';d.onclick=()=>pinKey('del');els.pinKeypad.appendChild(d);
 }
 
-/* ---------- админ-таблицы ---------- */
-function renderEmployeeOptions(){
-  els.employeeList.innerHTML=state.employees.map(e=>`<option value="${escapeHtml(e.fullName)}">`).join('');
-  els.employeeSelect.innerHTML='<option value="">— Выберите —</option>'+state.employees.map(e=>`<option value="${escapeHtml(e.employeeId||e.id)}">${escapeHtml(e.fullName)}</option>`).join('');
-  els.employeesBody.innerHTML=state.employees.map(e=>`<tr><td>${e.photo?`<img class="avatar" style="width:48px;height:48px;border-radius:10px" src="${e.photo}" />`:'—'}</td><td>${escapeHtml(e.fullName)}</td><td>${escapeHtml(e.staffId||'')}</td><td>${escapeHtml(e.department||'')}</td><td><button class="btn btn-ghost" data-emp="${escapeHtml(e.employeeId||e.id)}" type="button">Выбрать</button></td></tr>`).join('');
-  els.employeesBody.querySelectorAll('[data-emp]').forEach(btn=>btn.addEventListener('click',()=>selectEmployee(btn.dataset.emp)));
+/* ── Рендер таблиц ───────────────────────────────────────────── */
+
+function renderEmployeeOptions() {
+  const names = state.employees.map(e=>`<option value="${esc(e.fullName)}">`).join('');
+  els.employeeList.innerHTML = names;
+  els.employeeSelect.innerHTML = '<option value="">— Выберите —</option>' +
+    state.employees.map(e=>`<option value="${esc(e.employeeId||e.id)}">${esc(e.fullName)}</option>`).join('');
+  els.employeesBody.innerHTML = state.employees.map(e=>`<tr>
+    <td>${e.photo?`<img class="avatar" style="width:48px;height:48px;border-radius:10px" src="${esc(e.photo)}">`:'—'}</td>
+    <td>${esc(e.fullName)}</td><td>${esc(e.staffId||'')}</td><td>${esc(e.department||'')}</td>
+    <td><button class="btn btn-ghost" data-emp="${esc(e.employeeId||e.id)}" type="button">Выбрать</button></td>
+  </tr>`).join('');
+  els.employeesBody.querySelectorAll('[data-emp]').forEach(b=>b.onclick=()=>selectEmployee(b.dataset.emp));
+  // Обновляем datalist для фильтра отчёта по ФИО
+  els.reportEmpList.innerHTML = names;
 }
-function selectEmployee(id){
-  state.selectedEmployeeId=id;state.verified=false;state.matchScore=null;state.capturedPhoto=null;
-  renderSelectedEmployee();updateMealButton();
+
+function selectEmployee(id) {
+  state.selectedEmployeeId=id; state.verified=false; state.matchScore=null; state.capturedPhoto=null;
+  renderSelectedEmployee(); updateMealButton();
 }
-function openNewEmployee(){
-  state.selectedEmployeeId=null;state.verified=false;state.matchScore=null;state.capturedPhoto=null;
+
+function openNewEmployee() {
+  state.selectedEmployeeId=null; state.verified=false; state.matchScore=null; state.capturedPhoto=null;
   els.empName.value='';els.empId.value='';els.empDept.value='';els.empPos.value='';
-  els.employeePhoto.removeAttribute('src');els.employeePhoto.style.visibility='hidden';
-  els.employeeName.textContent='Новый сотрудник';els.employeeInfo.textContent='Сделайте фото и сохраните Face ID.';
+  els.employeePhoto.removeAttribute('src'); els.employeePhoto.style.visibility='hidden';
+  els.employeeName.textContent='Новый сотрудник';
+  els.employeeInfo.textContent='Сделайте фото и сохраните Face ID.';
   els.matchInfo.textContent='Совпадение: —';
 }
-function renderSelectedEmployee(){
-  const emp=getSelectedEmployee();
-  if(!emp){openNewEmployee();els.employeeName.textContent='Сотрудник не выбран';els.employeeInfo.textContent='Добавьте сотрудника и снимите эталон лица с камеры.';return}
+
+function renderSelectedEmployee() {
+  const emp = getSel();
+  if(!emp){ openNewEmployee(); els.employeeName.textContent='Сотрудник не выбран'; els.employeeInfo.textContent='Добавьте сотрудника и снимите эталон лица.'; return; }
   els.employeeName.textContent=emp.fullName||'';
   els.employeeInfo.textContent=[emp.department,emp.position,emp.staffId].filter(Boolean).join(' • ')||'';
-  els.employeePhoto.src=state.capturedPhoto||emp.photo||'';
-  els.employeePhoto.style.visibility=(state.capturedPhoto||emp.photo)?'visible':'hidden';
+  els.employeePhoto.src=state.capturedPhoto||emp.photo||''; els.employeePhoto.style.visibility=(state.capturedPhoto||emp.photo)?'visible':'hidden';
   els.matchInfo.textContent='Совпадение: '+(state.matchScore!==null?state.matchScore+'%':'—');
   els.empName.value=emp.fullName||'';els.empId.value=emp.staffId||'';els.empDept.value=emp.department||'';els.empPos.value=emp.position||'';
 }
-function filteredMeals(){
-  const text=els.filterText.value.trim().toLowerCase();
-  const date=els.filterDate.value;const meal=els.filterMeal.value;
-  return[...state.meals].filter(item=>{
-    const okText=!text||[item.employeeName,item.staffId,item.department].join(' ').toLowerCase().includes(text);
-    const okDate=!date||String(item.date||(item.timestamp||'').slice(0,10))===date;
-    const okMeal=!meal||item.mealType===meal;
-    return okText&&okDate&&okMeal;
+
+/* ── Журнал ──────────────────────────────────────────────────── */
+
+function isExtraRow(r) { return r.extraMeal===true||String(r.extraMeal)==='true'; }
+
+function filteredMeals() {
+  const txt  = els.filterText.value.trim().toLowerCase();
+  const date = els.filterDate.value;
+  const meal = els.filterMeal.value; // может быть 'extra'
+  return [...state.meals].filter(r=>{
+    const okTxt  = !txt  || [r.employeeName,r.staffId,r.department].join(' ').toLowerCase().includes(txt);
+    const okDate = !date || String(r.date||(r.timestamp||'').slice(0,10))===date;
+    const okMeal = !meal ||
+      (meal==='extra' ? isExtraRow(r) : r.mealType===meal && !isExtraRow(r));
+    return okTxt&&okDate&&okMeal;
   }).sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp)));
 }
-function renderJournal(){
+
+function renderJournal() {
+  const rows = filteredMeals();
+  els.journalBody.innerHTML = rows.map(r=>{
+    const extra = isExtraRow(r);
+    const label = extra ? 'Доп.' : r.mealType;
+    return `<tr>
+      <td>${fmtDT(r.timestamp)}</td>
+      <td><strong>${esc(r.employeeName||'')}</strong></td>
+      <td>${esc(r.department||'')}</td>
+      <td><span class="badge ${badgeClass(r.mealType,extra)}">${esc(label)}</span></td>
+      <td style="font-size:12px;color:var(--muted)">${esc(r.note&&r.note!=='face_verified'?r.note:'')}</td>
+      <td>${esc(r.siteName||'')}</td>
+    </tr>`;
+  }).join('');
+  els.statTotal.textContent     = rows.length;
+  els.statBreakfast.textContent = rows.filter(r=>r.mealType==='Завтрак'&&!isExtraRow(r)).length;
+  els.statLunch.textContent     = rows.filter(r=>r.mealType==='Обед'   &&!isExtraRow(r)).length;
+  els.statDinner.textContent    = rows.filter(r=>r.mealType==='Ужин'   &&!isExtraRow(r)).length;
+  els.statExtra.textContent     = rows.filter(isExtraRow).length;
+}
+
+/* ── Отчёты ──────────────────────────────────────────────────── */
+
+// Получаем отфильтрованные строки для отчёта (общая функция для обоих режимов)
+function getReportRows() {
+  const from    = els.reportDateFrom.value;
+  const to      = els.reportDateTo.value;
+  const deptTxt = els.reportDept.value.trim().toLowerCase();
+  // НОВОЕ: фильтр по ФИО сотрудника
+  const empTxt  = els.reportEmp.value.trim().toLowerCase();
+
+  return [...state.meals].filter(r=>{
+    const d = String(r.date||(r.timestamp||'').slice(0,10));
+    return (!from||d>=from) && (!to||d<=to) &&
+      (!deptTxt||String(r.department||'').toLowerCase().includes(deptTxt)) &&
+      // Фильтр по ФИО — ищем вхождение подстроки
+      (!empTxt||String(r.employeeName||'').toLowerCase().includes(empTxt));
+  });
+}
+
+// Агрегация строк по сотруднику → Map<employeeId, {name,dept,staffId,br,lu,di,ex}>
+function aggregateByEmployee(rows) {
+  const map = {};
+  rows.forEach(r=>{
+    const k = String(r.employeeId||r.employeeName||'?');
+    if(!map[k]) map[k]={ name:r.employeeName||'?', dept:r.department||'', staffId:r.staffId||'', br:0,lu:0,di:0,ex:0 };
+    if(isExtraRow(r)) map[k].ex++;
+    else if(r.mealType==='Завтрак') map[k].br++;
+    else if(r.mealType==='Обед')    map[k].lu++;
+    else if(r.mealType==='Ужин')    map[k].di++;
+  });
+  return Object.values(map).sort((a,b)=>String(a.name).localeCompare(String(b.name),'ru'));
+}
+
+// Расчёт суммы по одному сотруднику; возвращает null если цена неизвестна
+function calcSum(e) {
+  const pr = state.prices;
+  let total=0;
+  if(e.br>0){ if(pr.br===null) return null; total+=e.br*pr.br; }
+  if(e.lu>0){ if(pr.lu===null) return null; total+=e.lu*pr.lu; }
+  if(e.di>0){ if(pr.di===null) return null; total+=e.di*pr.di; }
+  if(e.ex>0){ if(pr.ex===null) return null; total+=e.ex*pr.ex; }
+  return total;
+}
+
+// Итоговая строка HTML для таблицы
+function reportTotalRow(totBr,totLu,totDi,totEx,totSum,sumUndef,colspan) {
+  return `<tr class="report-total">
+    <td colspan="${colspan}"><strong>ИТОГО</strong></td>
+    <td style="text-align:center"><strong>${totBr}</strong></td>
+    <td style="text-align:center"><strong>${totLu}</strong></td>
+    <td style="text-align:center"><strong>${totDi}</strong></td>
+    <td style="text-align:center"><strong>${totEx}</strong></td>
+    <td style="text-align:right"><strong>${sumUndef?'—':fmtMoney(totSum)}</strong></td>
+  </tr>`;
+}
+
+// ── Режим «Сводка по сотрудникам» ────────────────────────────────
+function buildSummaryReport(rows) {
+  const emps = aggregateByEmployee(rows);
+  let totBr=0,totLu=0,totDi=0,totEx=0,totSum=0,sumUndef=false;
+  emps.forEach(e=>{ totBr+=e.br;totLu+=e.lu;totDi+=e.di;totEx+=e.ex; const s=calcSum(e); if(s===null)sumUndef=true; else totSum+=s; });
+
+  const tableRows = emps.map((e,i)=>{
+    const s=calcSum(e);
+    return `<tr>
+      <td>${i+1}</td><td><strong>${esc(e.name)}</strong></td><td>${esc(e.dept)}</td><td>${esc(e.staffId)}</td>
+      <td style="text-align:center">${e.br||'—'}</td>
+      <td style="text-align:center">${e.lu||'—'}</td>
+      <td style="text-align:center">${e.di||'—'}</td>
+      <td style="text-align:center">${e.ex||'—'}</td>
+      <td style="text-align:right"><strong>${s===null?'—':fmtMoney(s)}</strong></td>
+    </tr>`;
+  }).join('');
+
+  const priceNote = (state.prices.br===null&&state.prices.lu===null&&state.prices.di===null&&state.prices.ex===null)
+    ? '<p class="mini" style="margin:8px 0">Цены не заданы — суммы не рассчитываются. Укажите в «Настройках».</p>'
+    : sumUndef ? '<p class="mini warn" style="margin:8px 0">⚠ Не все цены заданы — суммы рассчитаны частично.</p>'
+    : `<p class="mini ok" style="margin:8px 0">Итоговая сумма: <strong>${fmtMoney(totSum)}</strong></p>`;
+
+  // Сохраняем для экспорта
+  state.lastReport = { rows:emps, totals:{totBr,totLu,totDi,totEx,totSum,sumUndef}, mode:'summary',
+    from:els.reportDateFrom.value, to:els.reportDateTo.value };
+
+  return `
+    <div class="stats-5" style="margin-bottom:12px;">
+      <div class="stat"><div class="mini">Сотрудников</div><div class="n">${emps.length}</div></div>
+      <div class="stat"><div class="mini">Завтраков</div><div class="n">${totBr}</div></div>
+      <div class="stat"><div class="mini">Обедов</div><div class="n">${totLu}</div></div>
+      <div class="stat"><div class="mini">Ужинов</div><div class="n">${totDi}</div></div>
+      <div class="stat"><div class="mini">Доп.</div><div class="n">${totEx}</div></div>
+    </div>
+    ${priceNote}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>ФИО</th><th>Подразделение</th><th>ID</th>
+          <th style="text-align:center">Завтрак</th><th style="text-align:center">Обед</th>
+          <th style="text-align:center">Ужин</th><th style="text-align:center">Доп.</th>
+          <th style="text-align:right">Сумма</th>
+        </tr></thead>
+        <tbody>${tableRows||'<tr><td colspan="9">Нет данных.</td></tr>'}
+        ${tableRows?reportTotalRow(totBr,totLu,totDi,totEx,totSum,sumUndef,4):''}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── Режим «По дням» ───────────────────────────────────────────────
+function buildDayReport(rows) {
+  // Группируем по дате
+  const byDay = {};
+  rows.forEach(r=>{
+    const d = String(r.date||(r.timestamp||'').slice(0,10));
+    if(!byDay[d]) byDay[d]=[];
+    byDay[d].push(r);
+  });
+  const dates = Object.keys(byDay).sort();
+
+  let grandBr=0,grandLu=0,grandDi=0,grandEx=0,grandSum=0,grandSumUndef=false;
+
+  const sections = dates.map(date=>{
+    const dayRows = byDay[date];
+    const emps = aggregateByEmployee(dayRows);
+    let totBr=0,totLu=0,totDi=0,totEx=0,totSum=0,sumUndef=false;
+    emps.forEach(e=>{ totBr+=e.br;totLu+=e.lu;totDi+=e.di;totEx+=e.ex; const s=calcSum(e); if(s===null)sumUndef=true; else totSum+=s; });
+    grandBr+=totBr;grandLu+=totLu;grandDi+=totDi;grandEx+=totEx;
+    if(sumUndef) grandSumUndef=true; else grandSum+=totSum;
+
+    const tRows = emps.map(e=>{
+      const s=calcSum(e);
+      return `<tr>
+        <td>${esc(e.name)}</td><td>${esc(e.dept)}</td>
+        <td style="text-align:center">${e.br||'—'}</td>
+        <td style="text-align:center">${e.lu||'—'}</td>
+        <td style="text-align:center">${e.di||'—'}</td>
+        <td style="text-align:center">${e.ex||'—'}</td>
+        <td style="text-align:right">${s===null?'—':fmtMoney(s)}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="day-section">
+      <div class="day-header">📅 ${fmtDate(date)} &nbsp;·&nbsp; ${dayRows.length} выдач</div>
+      <div class="table-wrap" style="max-height:260px;">
+        <table><thead><tr>
+          <th>ФИО</th><th>Подр.</th>
+          <th style="text-align:center">Завт.</th><th style="text-align:center">Обед</th>
+          <th style="text-align:center">Ужин</th><th style="text-align:center">Доп.</th>
+          <th style="text-align:right">Сумма</th>
+        </tr></thead>
+        <tbody>${tRows}${reportTotalRow(totBr,totLu,totDi,totEx,totSum,sumUndef,2)}</tbody></table>
+      </div>
+    </div>`;
+  }).join('');
+
+  state.lastReport = { rows, totals:{totBr:grandBr,totLu:grandLu,totDi:grandDi,totEx:grandEx,totSum:grandSum,sumUndef:grandSumUndef},
+    mode:'byday', from:els.reportDateFrom.value, to:els.reportDateTo.value, byDay };
+
+  return `<p class="mini" style="margin-bottom:10px;">Дней в отчёте: <strong>${dates.length}</strong> &nbsp;|&nbsp;
+    Завтраков: <strong>${grandBr}</strong> &nbsp;|&nbsp; Обедов: <strong>${grandLu}</strong> &nbsp;|&nbsp;
+    Ужинов: <strong>${grandDi}</strong> &nbsp;|&nbsp; Доп.: <strong>${grandEx}</strong>
+    ${grandSumUndef?'':` &nbsp;|&nbsp; Итоговая сумма: <strong>${fmtMoney(grandSum)}</strong>`}</p>
+  ${sections||'<p class="mini">Нет данных за выбранный период.</p>'}`;
+}
+
+function buildReport() {
+  const rows = getReportRows();
+  const mode = document.querySelector('input[name="reportMode"]:checked')?.value||'summary';
+  els.reportContent.innerHTML = mode==='byday' ? buildDayReport(rows) : buildSummaryReport(rows);
+}
+
+/* ── Экспорт в xlsx (SheetJS) ────────────────────────────────── */
+
+// Общая функция: принимает заголовки и массив строк, скачивает .xlsx
+function downloadXlsx(filename, sheets) {
+  // sheets = [ { name, headers, rows } ]
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(s=>{
+    const ws = XLSX.utils.aoa_to_sheet([s.headers, ...s.rows]);
+    // Ширина столбцов: подбираем по содержимому
+    ws['!cols'] = s.headers.map((_,i)=>{
+      const max = Math.max(s.headers[i].length, ...s.rows.map(r=>String(r[i]??'').length));
+      return { wch: Math.min(Math.max(max,8),50) };
+    });
+    XLSX.utils.book_append_sheet(wb, ws, s.name);
+  });
+  XLSX.writeFile(wb, filename);
+}
+
+function exportReportXlsx() {
+  const rows = getReportRows();
+  if(!rows.length){ alert('Нет данных. Сначала сформируйте отчёт.'); return; }
+  const mode = document.querySelector('input[name="reportMode"]:checked')?.value||'summary';
+  const pr = state.prices;
+
+  if(mode==='summary') {
+    const emps = aggregateByEmployee(rows);
+    const headers = ['№','ФИО','Подразделение','Таб. №','Завтраков','Обедов','Ужинов','Доп.','Сумма (₸)'];
+    const data = emps.map((e,i)=>{
+      const s=calcSum(e);
+      return [i+1, e.name, e.dept, e.staffId, e.br, e.lu, e.di, e.ex, s===null?'':s];
+    });
+    const t = state.lastReport.totals||{};
+    data.push(['','ИТОГО','','',t.totBr,t.totLu,t.totDi,t.totEx,t.sumUndef?'':t.totSum]);
+    downloadXlsx(`отчёт-по-сотрудникам-${todayStr()}.xlsx`,[{ name:'Сводка', headers, rows:data }]);
+
+  } else {
+    // По дням: каждый день — отдельный лист (до 31 листа)
+    const byDay = {};
+    rows.forEach(r=>{ const d=String(r.date||(r.timestamp||'').slice(0,10)); if(!byDay[d])byDay[d]=[]; byDay[d].push(r); });
+    const sheets = Object.keys(byDay).sort().map(date=>{
+      const emps = aggregateByEmployee(byDay[date]);
+      const headers = ['ФИО','Подразделение','Таб. №','Завтраков','Обедов','Ужинов','Доп.','Сумма (₸)'];
+      const data = emps.map(e=>{ const s=calcSum(e); return [e.name,e.dept,e.staffId,e.br,e.lu,e.di,e.ex,s===null?'':s]; });
+      return { name: fmtDate(date).replace(/\./g,'-'), headers, rows:data };
+    });
+    downloadXlsx(`отчёт-по-дням-${todayStr()}.xlsx`, sheets);
+  }
+}
+
+function exportJournalXlsx() {
+  const rows = filteredMeals();
+  const headers = ['Дата','Время','ФИО','Таб. №','Подразделение','Тип питания','Доп. порция','Описание','Точка','Оператор'];
+  const data = rows.map(r=>[
+    String(r.date||''),
+    String(r.time||(r.timestamp?new Date(r.timestamp).toLocaleTimeString('ru-RU'):'')),
+    r.employeeName||'', r.staffId||'', r.department||'',
+    isExtraRow(r)?'Доп.':r.mealType||'',
+    isExtraRow(r)?'Да':'Нет',
+    (r.note&&r.note!=='face_verified')?r.note:'',
+    r.siteName||'', r.operator||''
+  ]);
+  downloadXlsx(`журнал-${todayStr()}.xlsx`,[{ name:'Журнал', headers, rows:data }]);
+}
+
+// CSV-экспорты (сохранены для совместимости)
+function exportCSV() {
   const rows=filteredMeals();
-  els.journalBody.innerHTML=rows.map(row=>`<tr><td>${formatDateTime(row.timestamp)}</td><td><strong>${escapeHtml(row.employeeName||'')}</strong></td><td>${escapeHtml(row.department||'')}</td><td><span class="badge ${badgeClass(row.mealType)}">${escapeHtml(row.mealType||'')}</span></td><td>${escapeHtml(row.siteName||'')}</td></tr>`).join('');
-  els.statTotal.textContent=rows.length;
-  els.statBreakfast.textContent=rows.filter(x=>x.mealType==='Завтрак').length;
-  els.statLunch.textContent=rows.filter(x=>x.mealType==='Обед').length;
-  els.statDinner.textContent=rows.filter(x=>x.mealType==='Ужин').length;
+  const hdr=['Дата','Время','ФИО','ID','Подразделение','Тип питания','Доп.','Описание','Точка','Оператор'];
+  const data=rows.map(r=>[String(r.date||''),String(r.time||(r.timestamp?new Date(r.timestamp).toLocaleTimeString('ru-RU'):'')),r.employeeName||'',r.staffId||'',r.department||'',isExtraRow(r)?'Доп.':r.mealType||'',isExtraRow(r)?'Да':'Нет',(r.note&&r.note!=='face_verified')?r.note:'',r.siteName||'',r.operator||'']);
+  const blob=new Blob(['\uFEFF',[hdr,...data].map(r=>r.map(csvEsc).join(';')).join('\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`журнал-${todayStr()}.csv`;a.click();
 }
-function buildReport(){
-  const from=els.reportDateFrom.value,to=els.reportDateTo.value,deptText=els.reportDept.value.trim().toLowerCase();
-  let rows=[...state.meals];
-  if(from)rows=rows.filter(r=>String(r.date||(r.timestamp||'').slice(0,10))>=from);
-  if(to)rows=rows.filter(r=>String(r.date||(r.timestamp||'').slice(0,10))<=to);
-  if(deptText)rows=rows.filter(r=>String(r.department||'').toLowerCase().includes(deptText));
-  const byDept={};
-  rows.forEach(r=>{const key=r.department||'Без подразделения';if(!byDept[key])byDept[key]={total:0,breakfast:0,lunch:0,dinner:0};byDept[key].total++;if(r.mealType==='Завтрак')byDept[key].breakfast++;if(r.mealType==='Обед')byDept[key].lunch++;if(r.mealType==='Ужин')byDept[key].dinner++});
-  const summary=`<div class="stats"><div class="stat"><div class="mini">Всего</div><div class="n">${rows.length}</div></div><div class="stat"><div class="mini">Завтраков</div><div class="n">${rows.filter(r=>r.mealType==='Завтрак').length}</div></div><div class="stat"><div class="mini">Обедов</div><div class="n">${rows.filter(r=>r.mealType==='Обед').length}</div></div><div class="stat"><div class="mini">Ужинов</div><div class="n">${rows.filter(r=>r.mealType==='Ужин').length}</div></div></div>`;
-  const table=Object.entries(byDept).map(([dept,v])=>`<tr><td>${escapeHtml(dept)}</td><td>${v.total}</td><td>${v.breakfast}</td><td>${v.lunch}</td><td>${v.dinner}</td></tr>`).join('');
-  els.reportContent.innerHTML=summary+`<div class="table-wrap" style="margin-top:14px;"><table><thead><tr><th>Подразделение</th><th>Всего</th><th>Завтрак</th><th>Обед</th><th>Ужин</th></tr></thead><tbody>${table||'<tr><td colspan="5">Нет данных.</td></tr>'}</tbody></table></div>`;
+
+function exportReportCSV() {
+  const rows = getReportRows();
+  if(!rows.length){ alert('Нет данных.'); return; }
+  const emps = aggregateByEmployee(rows);
+  const hdr=['ФИО','Подразделение','Таб. №','Завтраков','Обедов','Ужинов','Доп.','Сумма'];
+  const data = emps.map(e=>{ const s=calcSum(e); return [e.name,e.dept,e.staffId,e.br,e.lu,e.di,e.ex,s===null?'':s]; });
+  const t=state.lastReport.totals||{};
+  data.push(['ИТОГО','','',t.totBr,t.totLu,t.totDi,t.totEx,t.sumUndef?'':t.totSum]);
+  const blob=new Blob(['\uFEFF',[hdr,...data].map(r=>r.map(csvEsc).join(';')).join('\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`отчёт-${todayStr()}.csv`;a.click();
 }
-function exportCSV(){
-  const rows=filteredMeals();
-  const header=['Дата','Время','ФИО','ID','Подразделение','Тип питания','Точка','Оператор'];
-  const data=rows.map(r=>[String(r.date||''),String(r.time||(r.timestamp?new Date(r.timestamp).toLocaleTimeString('ru-RU'):'')),r.employeeName||'',r.staffId||'',r.department||'',r.mealType||'',r.siteName||'',r.operator||'']);
-  const content=[header,...data].map(row=>row.map(csvEscape).join(';')).join('\n');
-  const blob=new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`meal-journal-${todayStr()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-function setTab(tab){
+
+function setTab(tab) {
   state.activeTab=tab;
   document.querySelectorAll('[id^="tab-"]').forEach(x=>x.classList.add('hidden'));
   document.getElementById('tab-'+tab).classList.remove('hidden');
-  document.querySelectorAll('[data-tab]').forEach(btn=>btn.classList.toggle('btn-primary',btn.dataset.tab===tab));
-  if(tab==='reports')buildReport();
+  document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('btn-primary',b.dataset.tab===tab));
+  if(tab==='reports') buildReport();
 }
-function renderAll(){renderEmployeeOptions();renderSelectedEmployee();renderJournal();if(state.activeTab==='reports')buildReport();updateMealButton()}
 
-/* ---------- сервер ---------- */
-async function testApi(){try{const data=await apiGet('ping');setStatus(data.ok||data.message==='pong'?'Бэкенд доступен.':'Бэкенд отвечает с ошибкой.',data.ok?'ok':'warn')}catch(e){setStatus('Ошибка связи: '+e.message,'err')}}
-async function syncData(){try{setStatus('Загрузка…','');const [emp,meals]=await Promise.all([apiGet('listEmployees'),apiGet('listMeals',{limit:500})]);state.employees=Array.isArray(emp)?emp:(emp.items||[]);state.meals=Array.isArray(meals)?meals:(meals.items||[]);renderAll();setStatus('Данные обновлены.','ok')}catch(e){setStatus('Ошибка загрузки: '+e.message,'err')}}
+function renderAll() { renderEmployeeOptions(); renderSelectedEmployee(); renderJournal(); if(state.activeTab==='reports')buildReport(); updateMealButton(); }
 
-/* ---------- face-api ---------- */
-async function loadImageFromDataUrl(dataUrl){return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=dataUrl})}
-async function detectFace(source){return faceapi.detectSingleFace(source,new faceapi.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:.5})).withFaceLandmarks().withFaceDescriptor()}
+/* ── API: тест / синхронизация ──────────────────────────────── */
+
+async function testApi() {
+  try{ const d=await apiGet('ping'); setSt(d.ok||d.message==='pong'?'Бэкенд доступен.':'Бэкенд отвечает с ошибкой.',d.ok?'ok':'warn'); }
+  catch(e){ setSt('Ошибка связи: '+e.message,'err'); }
+}
+
+async function syncData() {
+  try{
+    setSt('Загрузка…','');
+    const [emp,meals]=await Promise.all([apiGet('listEmployees'),apiGet('listMeals',{limit:1000})]);
+    state.employees=Array.isArray(emp)?emp:(emp.items||[]);
+    state.meals=Array.isArray(meals)?meals:(meals.items||[]);
+    renderAll(); setSt('Данные обновлены.','ok');
+  }catch(e){ setSt('Ошибка загрузки: '+e.message,'err'); }
+}
+
+/* ── Face API ─────────────────────────────────────────────────── */
+
+async function loadImg(dataUrl){ return new Promise((res,rej)=>{ const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl; }); }
+
+async function detectFace(src){ return faceapi.detectSingleFace(src,new faceapi.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:.5})).withFaceLandmarks().withFaceDescriptor(); }
+
 function showFaceBox(box,pending=false){
   const vw=els.video.videoWidth||1,vh=els.video.videoHeight||1;
-  els.faceBox.style.display='block';
-  els.faceBox.classList.toggle('pending',pending);
-  els.faceBox.style.left=(box.x/vw*100)+'%';els.faceBox.style.top=(box.y/vh*100)+'%';
-  els.faceBox.style.width=(box.width/vw*100)+'%';els.faceBox.style.height=(box.height/vh*100)+'%';
+  els.faceBox.style.display='block'; els.faceBox.classList.toggle('pending',pending);
+  els.faceBox.style.left=(box.x/vw*100)+'%'; els.faceBox.style.top=(box.y/vh*100)+'%';
+  els.faceBox.style.width=(box.width/vw*100)+'%'; els.faceBox.style.height=(box.height/vh*100)+'%';
 }
-async function computeFaceDescriptor(source){if(!state.modelsLoaded)return null;const detection=await detectFace(source);return detection?Array.from(detection.descriptor):null}
-function scoreFromDistance(dist){return Math.max(0,Math.round((1-Math.min(dist,1))*100))}
-function eyeAR(eye){const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);return (d(eye[1],eye[5])+d(eye[2],eye[4]))/(2*d(eye[0],eye[3]))}
-function descriptorDiff(a,b){let s=0;for(let i=0;i<a.length;i++)s+=(a[i]-b[i])*(a[i]-b[i]);return Math.sqrt(s)}
 
-async function captureFaceFromCamera(){
-  if(!state.stream)await startCamera();
-  capturePhoto();
-  const source=state.capturedPhoto?await loadImageFromDataUrl(state.capturedPhoto):els.video;
-  const desc=await computeFaceDescriptor(source);
-  if(!desc)throw new Error('Лицо не видно. Встаньте перед камерой.');
-  return{photo:state.capturedPhoto,faceDescriptor:desc.join(',')};
-}
+async function computeDesc(src){ if(!state.modelsLoaded)return null; const d=await detectFace(src); return d?Array.from(d.descriptor):null; }
+
+const distToScore = d => Math.max(0,Math.round((1-Math.min(d,1))*100));
+
+function eyeAR(eye){ const D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y); return (D(eye[1],eye[5])+D(eye[2],eye[4]))/(2*D(eye[0],eye[3])); }
+
+function descDiff(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=(a[i]-b[i])**2; return Math.sqrt(s); }
 
 async function saveEmployeeRemote(){
   const fullName=els.empName.value.trim();
-  if(!fullName){setStatus('Введите ФИО.','warn');return}
-  if(fullName.length>120){setStatus('ФИО слишком длинное.','warn');return}
-  if(!state.stream&&!state.capturedPhoto){setStatus('Включите камеру и сделайте фото.','warn');return}
-  let faceDescriptor='',photo=state.capturedPhoto||getSelectedEmployee()?.photo||'';
+  if(!fullName){setSt('Введите ФИО.','warn');return;}
+  if(!state.stream&&!state.capturedPhoto){setSt('Включите камеру и сделайте фото.','warn');return;}
+  let faceDescriptor='',photo=state.capturedPhoto||getSel()?.photo||'';
   try{
-    setStatus('Сохранение Face ID…','');
+    setSt('Сохранение Face ID…','');
     if(!state.stream)await startCamera();
     if(!state.capturedPhoto)capturePhoto();
-    const source=state.capturedPhoto?await loadImageFromDataUrl(state.capturedPhoto):els.video;
-    const desc=await computeFaceDescriptor(source);
-    if(!desc){setStatus('Лицо не видно на фото.','err');return}
-    faceDescriptor=desc.join(',');
-    photo=state.capturedPhoto||photo;
-    if(photo) photo = await resizePhoto(photo);
-  }catch(e){setStatus('Ошибка Face ID: '+e.message,'err');return}
-  const payload={employeeId:state.selectedEmployeeId||generateUUID(),fullName,staffId:els.empId.value.trim(),department:els.empDept.value.trim(),position:els.empPos.value.trim(),photo,faceDescriptor,active:true};
+    const src=state.capturedPhoto?await loadImg(state.capturedPhoto):els.video;
+    const desc=await computeDesc(src);
+    if(!desc){setSt('Лицо не видно на фото.','err');return;}
+    faceDescriptor=desc.join(','); photo=state.capturedPhoto||photo;
+  }catch(e){setSt('Ошибка Face ID: '+e.message,'err');return;}
+  const payload={employeeId:state.selectedEmployeeId||genUUID(),fullName,staffId:els.empId.value.trim(),department:els.empDept.value.trim(),position:els.empPos.value.trim(),photo,faceDescriptor,active:true};
   try{
     const data=await apiPost('saveEmployee',payload);
     if(data.ok===false||data.status==='error')throw new Error(data.message||'Ошибка');
-    setStatus('Сотрудник сохранён.','ok');
-    state.selectedEmployeeId=payload.employeeId;state.capturedPhoto=photo;
+    setSt('Сотрудник сохранён.','ok'); state.selectedEmployeeId=payload.employeeId; state.capturedPhoto=photo;
     await syncData();
-  }catch(e){setStatus('Ошибка: '+e.message,'err')}
+  }catch(e){setSt('Ошибка: '+e.message,'err');}
 }
 
-/* ---------- антиспуфинг ---------- */
-function resetPending(){
-  state.pendingMatchId=null;state.pendingFrames=[];state.pendingBlinkSeen=false;state.lastEAR=null;
-  els.faceBox.classList.remove('pending');els.livenessPip.style.display='none';
-}
+/* ── Антиспуфинг + автосканирование ─────────────────────────── */
+
+function resetPending(){ state.pendingMatchId=null;state.pendingFrames=[];state.pendingBlinkSeen=false;state.lastEAR=null; els.faceBox.classList.remove('pending');els.livenessPip.style.display='none'; }
+
 async function identifyEmployeeFromVideo(){
   if(!state.modelsLoaded||!state.stream||state.scanBusy||state.uiMode!=='registrar'||state.verified)return;
   state.scanBusy=true;
   try{
-    const detection=await detectFace(els.video);
-    if(!detection){setFaceStatus('Смотрите в камеру','warn');resetPending();return}
-    const vw=els.video.videoWidth||1;
-    const faceRatio=detection.detection.box.width/vw;
-    if(faceRatio<MIN_FACE_RATIO){setFaceStatus('Подойдите ближе','warn');showFaceBox(detection.detection.box,true);resetPending();return}
-    const labeled=employeesWithDescriptors();
-    if(!labeled.length){setFaceStatus('База пуста','warn');setKioskBanner('База сотрудников пуста. Обратитесь к администратору.','warn');return}
-    const matcher=new faceapi.FaceMatcher(labeled.map(x=>new faceapi.LabeledFaceDescriptors(String(x.emp.employeeId||x.emp.id),[x.desc])),DIST_BORDER);
-    const match=matcher.findBestMatch(detection.descriptor);
-    if(match.label==='unknown'||match.distance>DIST_BORDER){setFaceStatus('Не в базе','warn');setKioskBanner('Лицо не распознано. Обратитесь к администратору.','warn');showFaceBox(detection.detection.box,true);resetPending();return}
+    const det=await detectFace(els.video);
+    if(!det){setFS('Смотрите в камеру','warn');resetPending();return;}
+    if(det.detection.box.width/(els.video.videoWidth||1)<MIN_FACE_RATIO){setFS('Подойдите ближе','warn');showFaceBox(det.detection.box,true);resetPending();return;}
+    const labeled=empsWithDesc();
+    if(!labeled.length){setFS('База пуста','warn');setKB('База сотрудников пуста.','warn');return;}
+    const matcher=new faceapi.FaceMatcher(labeled.map(x=>new faceapi.LabeledFaceDescriptors(String(x.emp.employeeId||x.emp.id),[x.d])),DIST_BORDER);
+    const match=matcher.findBestMatch(det.descriptor);
+    if(match.label==='unknown'||match.distance>DIST_BORDER){setFS('Не в базе','warn');setKB('Лицо не распознано. Обратитесь к администратору.','warn');showFaceBox(det.detection.box,true);resetPending();return;}
     if(state.pendingMatchId&&state.pendingMatchId!==match.label)resetPending();
     state.pendingMatchId=match.label;
-    const desc=new Float32Array(detection.descriptor);
-    const landmarks=detection.landmarks;
-    const ear=(eyeAR(landmarks.getLeftEye())+eyeAR(landmarks.getRightEye()))/2;
-    if(state.lastEAR!==null && state.lastEAR>=EAR_BLINK_THRESHOLD+0.05 && ear<EAR_BLINK_THRESHOLD)state.pendingBlinkSeen=true;
-    state.lastEAR=ear;
-    state.pendingFrames.push(desc);
-    if(state.pendingFrames.length>REQUIRED_CONSECUTIVE)state.pendingFrames.shift();
-    showFaceBox(detection.detection.box,true);
+    const desc=new Float32Array(det.descriptor);
+    const lm=det.landmarks;
+    const ear=(eyeAR(lm.getLeftEye())+eyeAR(lm.getRightEye()))/2;
+    if(state.lastEAR!==null&&state.lastEAR>=EAR_BLINK_THRESHOLD+0.05&&ear<EAR_BLINK_THRESHOLD) state.pendingBlinkSeen=true;
+    state.lastEAR=ear; state.pendingFrames.push(desc);
+    if(state.pendingFrames.length>REQUIRED_CONSECUTIVE) state.pendingFrames.shift();
+    showFaceBox(det.detection.box,true);
     els.livenessPip.style.display='block';
-    els.livenessPip.textContent=`Подтверждение… ${state.pendingFrames.length}/${REQUIRED_CONSECUTIVE}`+(state.pendingBlinkSeen?' ✓ моргание':'');
-    setFaceStatus('Распознавание…','warn');
+    els.livenessPip.textContent=`Подтверждение… ${state.pendingFrames.length}/${REQUIRED_CONSECUTIVE}`+(state.pendingBlinkSeen?' ✓':'');
+    setFS('Распознавание…','warn');
     if(state.pendingFrames.length<REQUIRED_CONSECUTIVE||match.distance>DIST_OK)return;
-    let maxDiff=0;
-    for(let i=1;i<state.pendingFrames.length;i++)maxDiff=Math.max(maxDiff,descriptorDiff(state.pendingFrames[0],state.pendingFrames[i]));
-    const livenessOk=state.pendingBlinkSeen||maxDiff>=MIN_DESCRIPTOR_VAR;
-    if(!livenessOk){setFaceStatus('Проверка живости…','warn');setKioskBanner('Моргните, пожалуйста','warn');return}
+    let maxDiff=0; for(let i=1;i<state.pendingFrames.length;i++) maxDiff=Math.max(maxDiff,descDiff(state.pendingFrames[0],state.pendingFrames[i]));
+    if(!(state.pendingBlinkSeen||maxDiff>=MIN_DESCRIPTOR_VAR)){setFS('Проверка живости…','warn');setKB('Моргните, пожалуйста','warn');return;}
     const emp=state.employees.find(e=>String(e.employeeId||e.id)===String(match.label));
-    if(!emp){resetPending();return}
+    if(!emp){resetPending();return;}
     capturePhoto();
-    applyFaceMatch(emp,scoreFromDistance(match.distance),match.distance);
+    applyFaceMatch(emp,distToScore(match.distance));
     resetPending();
-  }catch(e){setFaceStatus('Ошибка распознавания','err')}finally{state.scanBusy=false}
+  }catch(e){setFS('Ошибка распознавания','err');}finally{state.scanBusy=false;}
 }
-function applyFaceMatch(emp,score,dist){
-  state.selectedEmployeeId=emp.employeeId||emp.id;
-  state.verified=true;state.matchScore=score;
-  renderSelectedEmployee();updateRecognizedDisplay(emp);updateMealButton();
+
+function applyFaceMatch(emp,score){
+  state.selectedEmployeeId=emp.employeeId||emp.id; state.verified=true; state.matchScore=score;
+  renderSelectedEmployee(); updateRecognizedDisplay(emp); updateMealButton();
   els.matchInfo&&(els.matchInfo.textContent='Совпадение: '+score+'%');
-  setFaceStatus('Распознан','ok');
-  const left=cooldownLeftMs(emp.employeeId||emp.id);
-  if(left>0)setKioskBanner(`${emp.fullName}: питание уже выдано (${Math.ceil(left/60000)} мин до следующей выдачи)`,'warn');
-  else setKioskBanner(`Добро пожаловать, ${emp.fullName}!`,'ok');
+  setFS('Распознан','ok');
+  setKB(`Добро пожаловать, ${emp.fullName}!`,'ok');
   stopAutoScan();
 }
+
 async function verifyFace(){
-  const emp=getSelectedEmployee();
-  if(!emp){setStatus('Выберите сотрудника.','warn');return}
-  if(!state.modelsLoaded){setStatus('Модели загружаются…','warn');return}
+  const emp=getSel(); if(!emp){setSt('Выберите сотрудника.','warn');return;}
+  if(!state.modelsLoaded){setSt('Модели загружаются…','warn');return;}
   if(!state.stream)await startCamera();
-  setFaceStatus('Проверка…');
+  setFS('Проверка…');
   try{
-    const detection=await detectFace(els.video);
-    if(!detection){setStatus('Лицо не найдено.','warn');setFaceStatus('Нет лица','warn');return}
-    showFaceBox(detection.detection.box);
-    let stored=parseFaceDescriptor(emp.faceDescriptor);
-    if(!stored){setStatus('Создаём Face ID…','');await captureFaceFromCamera();setStatus('Сначала сохраните сотрудника с Face ID.','warn');return}
-    const dist=faceapi.euclideanDistance(detection.descriptor,stored);
-    state.verified=dist<DIST_OK;state.matchScore=scoreFromDistance(dist);
-    capturePhoto();renderSelectedEmployee();
-    setStatus(state.verified?`Лицо подтверждено (${state.matchScore}%).`:'Совпадение недостаточно.',state.verified?'ok':'err');
-    setFaceStatus(state.verified?'Подтверждено':'Не совпало',state.verified?'ok':'err');
-  }catch(e){setStatus('Ошибка: '+e.message,'err')}
+    const det=await detectFace(els.video); if(!det){setSt('Лицо не найдено.','warn');setFS('Нет лица','warn');return;}
+    showFaceBox(det.detection.box);
+    const stored=parseFDesc(emp.faceDescriptor); if(!stored){setSt('Сначала сохраните Face ID.','warn');return;}
+    const dist=faceapi.euclideanDistance(det.descriptor,stored);
+    state.verified=dist<DIST_OK; state.matchScore=distToScore(dist);
+    capturePhoto(); renderSelectedEmployee();
+    setSt(state.verified?`Лицо подтверждено (${state.matchScore}%).`:'Совпадение недостаточно.',state.verified?'ok':'err');
+    setFS(state.verified?'Подтверждено':'Не совпало',state.verified?'ok':'err');
+  }catch(e){setSt('Ошибка: '+e.message,'err');}
 }
 
-/* ---------- регистрация выдачи ---------- */
-async function registerCurrentMeal(){
-  const meal=getCurrentMealType();
-  if(!meal){setKioskBanner('Сейчас не время приёма пищи.','warn');return}
-  const emp=getSelectedEmployee();
-  if(!emp||!state.verified){setKioskBanner('Сначала распознайте лицо.','warn');return}
-  const left=cooldownLeftMs(emp.employeeId||emp.id);
-  if(left>0){setKioskBanner(`Питание уже выдано. До следующей выдачи: ${Math.ceil(left/60000)} мин.`,'warn');updateMealButton();return}
-  const now=new Date();
-  const payload={mealId:generateUUID(),timestamp:now.toISOString(),date:todayStr(),time:now.toLocaleTimeString('ru-RU'),employeeId:emp.employeeId||emp.id,employeeName:emp.fullName,staffId:emp.staffId||'',department:emp.department||'',mealType:meal,siteName:els.siteName.value.trim(),operator:els.operatorName.value.trim(),matchScore:state.matchScore,photo:state.capturedPhoto||emp.photo||'',verified:true,note:'face_verified'};
+/* ── Регистрация питания ─────────────────────────────────────── */
+
+// НОВОЕ: защита от двойного клика — блокируем кнопку пока идёт запрос
+// и дополнительно ставим таймер на 1.5 сек после ответа
+let _mealBusy = false;
+
+async function doSaveMeal(mealType, isExtra, note) {
+  if(_mealBusy) return;
+  _mealBusy=true;
   els.getMealBtn.disabled=true;
+  els.extraMealBtn.disabled=true;
+
+  const emp = getSel();
+  if(!emp||!state.verified){ setKB('Сначала распознайте лицо.','warn'); _mealBusy=false; updateMealButton(); return; }
+
+  const now = new Date();
+  const payload = {
+    mealId:       genUUID(),
+    timestamp:    now.toISOString(),
+    date:         todayStr(),
+    time:         now.toLocaleTimeString('ru-RU'),
+    employeeId:   emp.employeeId||emp.id,
+    employeeName: emp.fullName,
+    staffId:      emp.staffId||'',
+    department:   emp.department||'',
+    mealType:     mealType,
+    extraMeal:    isExtra,
+    siteName:     els.siteName.value.trim(),
+    operator:     els.operatorName.value.trim(),
+    matchScore:   state.matchScore,
+    photo:        state.capturedPhoto||emp.photo||'',
+    verified:     true,
+    // note: для доп. питания — пользовательское описание; для обычного — face_verified
+    note:         isExtra ? (note||'доп. питание') : 'face_verified'
+  };
+
   try{
-    const data=await apiPost('saveMeal',payload);
-    if(data.ok===false||data.status==='error'||data.status==='cooldown'){
-      const min=data.minutesLeft||Math.ceil(COOLDOWN_MS/60000);
-      setKioskBanner(data.message||`Питание уже выдано. Подождите ${min} мин.`,'warn');
-      await syncData();setTimeout(resetRegistrarSession,3000);return;
-    }
-    setKioskBanner(`✓ ${emp.fullName} — ${meal}`,'ok');
-    await syncData();setTimeout(resetRegistrarSession,2500);
-  }catch(e){setKioskBanner('Ошибка: '+e.message,'err');els.getMealBtn.disabled=false}
+    const data = await apiPost('saveMeal', payload);
+    if(data.ok===false||data.status==='error'){ setKB(data.message||'Ошибка сохранения.','err'); _mealBusy=false; updateMealButton(); els.extraMealBtn.disabled=false; return; }
+    // Показываем «Приятного аппетита!» с именем, типом, и описанием доп. питания
+    showAppetitePopup(emp.fullName, mealType, isExtra, note);
+    await syncData();
+    // После успеха — небольшая пауза перед сбросом сессии (пользователь видит попап)
+    setTimeout(()=>{ _mealBusy=false; resetRegistrarSession(); }, 2600);
+  }catch(e){
+    setKB('Ошибка: '+e.message,'err');
+    _mealBusy=false; updateMealButton(); els.extraMealBtn.disabled=false;
+  }
 }
 
-/* ---------- камера ---------- */
+async function registerCurrentMeal() {
+  const meal = getCurrentMealType();
+  if(!meal){ setKB('Сейчас не время приёма пищи.','warn'); return; }
+  await doSaveMeal(meal, false, '');
+}
+
+/* ── Модальное окно «Доп. питание» ──────────────────────────── */
+
+function openExtraMealModal() {
+  const emp = getSel();
+  if(!emp||!state.verified){ setKB('Сначала распознайте лицо.','warn'); return; }
+  // Подпись в модальном окне — имя сотрудника
+  els.extraModalSub.textContent = emp.fullName + ' — укажите, что именно выдаётся';
+  els.extraMealNote.value = '';
+  els.extraMealConfirmBtn.disabled = true;
+  els.extraMealStatus.textContent  = '';
+  els.extraMealModal.classList.add('visible');
+  els.extraMealNote.focus();
+}
+
+function closeExtraMealModal() {
+  els.extraMealModal.classList.remove('visible');
+}
+
+// Кнопка активна только когда поле не пустое
+els.extraMealNote.addEventListener('input', ()=>{
+  els.extraMealConfirmBtn.disabled = !els.extraMealNote.value.trim();
+});
+
+els.extraMealConfirmBtn.addEventListener('click', async ()=>{
+  const note = els.extraMealNote.value.trim();
+  if(!note){ els.extraMealStatus.textContent='Заполните описание.'; return; }
+  closeExtraMealModal();
+  // Тип питания для доп. — используем текущий, либо 'Обед' как дефолт
+  const mealType = getCurrentMealType()||'Обед';
+  await doSaveMeal(mealType, true, note);
+});
+
+els.extraMealCancelBtn.addEventListener('click', closeExtraMealModal);
+// Клик вне модального окна — закрываем
+els.extraMealModal.addEventListener('click', e=>{ if(e.target===els.extraMealModal)closeExtraMealModal(); });
+
+/* ── Камера ───────────────────────────────────────────────────── */
+
 async function startCamera(){
   try{
     if(state.stream)return;
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
-    state.stream=stream;els.video.srcObject=stream;await els.video.play();
-    setFaceStatus('Камера включена','ok');
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
+    state.stream=s; els.video.srcObject=s; await els.video.play();
+    setFS('Камера включена','ok');
     if(state.uiMode==='registrar'&&!state.verified)startAutoScan();
-  }catch(e){setFaceStatus('Нет камеры','err');setKioskBanner('Разрешите доступ к камере в браузере.','err')}
+  }catch(e){setFS('Нет камеры','err');setKB('Разрешите доступ к камере в браузере.','err');}
 }
-function stopAutoScan(){if(state.scanTimer){clearInterval(state.scanTimer);state.scanTimer=null}}
+
+const stopAutoScan=()=>{ if(state.scanTimer){clearInterval(state.scanTimer);state.scanTimer=null;} };
+
 function startAutoScan(){
   stopAutoScan();
   if(state.uiMode!=='registrar'||state.verified||!state.modelsLoaded||!state.stream)return;
-  state.scanTimer=setInterval(()=>{if(!state.verified&&!state.scanBusy)identifyEmployeeFromVideo()},FRAME_INTERVAL_MS);
-}
-function capturePhoto(){
-  const video=els.video;if(!video.videoWidth)return;
-  const c=els.captureCanvas;const maxW=640;const scale=Math.min(1,maxW/(video.videoWidth||maxW));
-  c.width=Math.round(video.videoWidth*scale);c.height=Math.round(video.videoHeight*scale);
-  c.getContext('2d').drawImage(video,0,0,c.width,c.height);
-  state.capturedPhoto=c.toDataURL('image/jpeg',.72);
-  if(els.employeePhoto){els.employeePhoto.src=state.capturedPhoto;els.employeePhoto.style.visibility='visible'}
-}
-async function loadModels(){
-  try{
-    setFaceStatus('Загрузка моделей…');
-    const uri='./models';
-    await Promise.all([faceapi.nets.tinyFaceDetector.loadFromUri(uri),faceapi.nets.faceLandmark68Net.loadFromUri(uri),faceapi.nets.faceRecognitionNet.loadFromUri(uri)]);
-    state.modelsLoaded=true;setFaceStatus('Готово','ok');
-    startAutoScan();
-  }catch(e){setFaceStatus('Ошибка моделей','err');setKioskBanner('Откройте через HTTPS или локальный сервер (см. README).','err')}
+  state.scanTimer=setInterval(()=>{if(!state.verified&&!state.scanBusy)identifyEmployeeFromVideo();},FRAME_INTERVAL_MS);
 }
 
-/* ---------- мастер ---------- */
+function capturePhoto(){
+  const v=els.video; if(!v.videoWidth)return;
+  const c=els.captureCanvas; const sc=Math.min(1,640/(v.videoWidth||640));
+  c.width=Math.round(v.videoWidth*sc); c.height=Math.round(v.videoHeight*sc);
+  c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+  state.capturedPhoto=c.toDataURL('image/jpeg',.72);
+  if(els.employeePhoto){els.employeePhoto.src=state.capturedPhoto;els.employeePhoto.style.visibility='visible';}
+}
+
+async function loadModels(){
+  try{
+    setFS('Загрузка моделей…');
+    await Promise.all([faceapi.nets.tinyFaceDetector.loadFromUri('./models'),faceapi.nets.faceLandmark68Net.loadFromUri('./models'),faceapi.nets.faceRecognitionNet.loadFromUri('./models')]);
+    state.modelsLoaded=true; setFS('Готово','ok'); startAutoScan();
+  }catch(e){setFS('Ошибка моделей','err');setKB('Откройте через HTTPS или локальный сервер.','err');}
+}
+
+/* ── Мастер первой настройки ─────────────────────────────────── */
+
 async function finishWizardSetup(){
   els.siteName.value=els.wizSiteName.value.trim();
   els.operatorName.value=els.wizOperator.value.trim()||'Оператор';
-  if(!els.siteName.value){setWizStatus('Укажите название точки.','warn');return}
-  saveSettings();updateSiteSubtitle();setWizStatus('Проверка связи с бэкендом…','');
+  if(!els.siteName.value){setWizSt('Укажите название точки.','warn');return;}
+  saveSettings(); updSub(); setWizSt('Проверка связи…','');
   try{
-    const data=await apiGet('ping');
-    if(!(data.ok||data.message==='pong'))throw new Error('Бэкенд не ответил');
-    state.setupDone=true;saveSettings();await syncData();
-    setWizStatus('Готово!','ok');
-    setTimeout(()=>{hideSetupWizard();setUiMode('registrar');startCamera().catch(()=>{})},600);
-  }catch(e){setWizStatus('Ошибка: '+e.message+'. Проверьте URL в коде (константа API_URL).','err')}
+    const d=await apiGet('ping'); if(!(d.ok||d.message==='pong'))throw new Error('Бэкенд не ответил');
+    state.setupDone=true; saveSettings(); await syncData();
+    setWizSt('Готово!','ok');
+    setTimeout(()=>{hideSetupWizard();setUiMode('registrar');startCamera().catch(()=>{});},600);
+  }catch(e){setWizSt('Ошибка: '+e.message+'. Проверьте API_URL в коде.','err');}
 }
 
-/* ---------- обработчики ---------- */
-document.getElementById('saveConfigBtn').addEventListener('click',()=>{saveSettings();updateSiteSubtitle();state.setupDone=true;saveSettings();setStatus('Сохранено.','ok')});
-document.getElementById('testApiBtn').addEventListener('click',testApi);
-document.getElementById('syncBtn').addEventListener('click',syncData);
-document.getElementById('captureBtn').addEventListener('click',capturePhoto);
-document.getElementById('newEmployeeBtn').addEventListener('click',openNewEmployee);
-document.getElementById('saveEmployeeBtn').addEventListener('click',saveEmployeeRemote);
-document.getElementById('verifyFaceBtn').addEventListener('click',verifyFace);
-document.getElementById('adminModeBtn').addEventListener('click',showPinModal);
-document.getElementById('registrarModeBtn').addEventListener('click',()=>setUiMode('registrar'));
-document.getElementById('getMealBtn').addEventListener('click',registerCurrentMeal);
-document.getElementById('pinCancelBtn').addEventListener('click',hidePinModal);
-document.getElementById('savePinBtn').addEventListener('click',()=>{const p=els.adminPin.value.trim();if(!/^\d{4,6}$/.test(p)){setStatus('PIN: 4–6 цифр.','warn');return}storedPin=p;els.adminPin.value='';saveSettings();setStatus('PIN сохранён.','ok')});
-document.querySelectorAll('[data-tab]').forEach(btn=>btn.addEventListener('click',()=>setTab(btn.dataset.tab)));
-document.getElementById('exportBtn').addEventListener('click',exportCSV);
-document.getElementById('resetFiltersBtn').addEventListener('click',()=>{els.filterText.value='';els.filterDate.value='';els.filterMeal.value='';renderJournal()});
+/* ── Обработчики событий ─────────────────────────────────────── */
+
+document.getElementById('saveConfigBtn').onclick = ()=>{ saveSettings();updSub();state.setupDone=true;saveSettings();setSt('Сохранено.','ok'); };
+document.getElementById('testApiBtn').onclick    = testApi;
+document.getElementById('syncBtn').onclick       = syncData;
+document.getElementById('captureBtn').onclick    = capturePhoto;
+document.getElementById('newEmployeeBtn').onclick   = openNewEmployee;
+document.getElementById('saveEmployeeBtn').onclick  = saveEmployeeRemote;
+document.getElementById('verifyFaceBtn').onclick    = verifyFace;
+document.getElementById('adminModeBtn').onclick     = showPinModal;
+document.getElementById('registrarModeBtn').onclick = ()=>setUiMode('registrar');
+document.getElementById('getMealBtn').onclick       = registerCurrentMeal;
+document.getElementById('extraMealBtn').onclick     = openExtraMealModal;
+document.getElementById('pinCancelBtn').onclick     = hidePinModal;
+
+document.getElementById('savePinBtn').onclick = ()=>{
+  const p=els.adminPin.value.trim();
+  if(!/^\d{4,6}$/.test(p)){setSt('PIN: 4–6 цифр.','warn');return;}
+  storedPin=p; els.adminPin.value=''; saveSettings(); setSt('PIN сохранён.','ok');
+};
+
+document.getElementById('savePricesBtn').onclick = ()=>{
+  state.prices={ br:parsePrice(els.priceBr.value), lu:parsePrice(els.priceLu.value), di:parsePrice(els.priceDi.value), ex:parsePrice(els.priceEx.value) };
+  saveSettings();
+  els.pricesStatus.textContent='Цены сохранены.'; els.pricesStatus.className='status ok';
+  if(state.activeTab==='reports')buildReport();
+};
+
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+document.getElementById('buildReportBtn').onclick     = buildReport;
+document.getElementById('exportReportXlsxBtn').onclick = exportReportXlsx;
+document.getElementById('exportReportBtn').onclick    = exportReportCSV;
+document.getElementById('exportBtn').onclick          = exportCSV;
+document.getElementById('exportJournalXlsxBtn').onclick = exportJournalXlsx;
+document.getElementById('resetFiltersBtn').onclick    = ()=>{ els.filterText.value='';els.filterDate.value='';els.filterMeal.value=''; renderJournal(); };
 [els.filterText,els.filterDate,els.filterMeal].forEach(el=>el.addEventListener('input',renderJournal));
-els.employeeSearch.addEventListener('change',()=>{const q=els.employeeSearch.value.trim().toLowerCase();const emp=state.employees.find(e=>[e.fullName,e.staffId,e.department].join(' ').toLowerCase().includes(q));if(emp)selectEmployee(emp.employeeId||emp.id)});
-els.employeeSelect.addEventListener('change',()=>{if(els.employeeSelect.value)selectEmployee(els.employeeSelect.value)});
-document.getElementById('buildReportBtn').addEventListener('click',buildReport);
-document.getElementById('wizSaveBtn').addEventListener('click',finishWizardSetup);
-document.getElementById('openWizardBtn').addEventListener('click',showSetupWizard);
+
+els.employeeSearch.addEventListener('change',()=>{
+  const q=els.employeeSearch.value.trim().toLowerCase();
+  const emp=state.employees.find(e=>[e.fullName,e.staffId,e.department].join(' ').toLowerCase().includes(q));
+  if(emp)selectEmployee(emp.employeeId||emp.id);
+});
+els.employeeSelect.addEventListener('change',()=>{ if(els.employeeSelect.value)selectEmployee(els.employeeSelect.value); });
+
+// Переключатель режима отчёта: сразу перестраивает при смене
+document.querySelectorAll('input[name="reportMode"]').forEach(r=>r.addEventListener('change',()=>{ if(state.activeTab==='reports')buildReport(); }));
+
+document.getElementById('openWizardBtn').onclick = showSetupWizard;
+document.getElementById('wizSaveBtn').onclick    = finishWizardSetup;
+
+// Клик по попапу «Приятного аппетита» — закрыть досрочно
+els.appetiteOverlay.onclick = ()=>els.appetiteOverlay.classList.remove('visible');
+
+/* ── Инициализация ───────────────────────────────────────────── */
 
 async function init(){
   buildPinKeypad();
   loadSettings();
-  updateSiteSubtitle();
+  updSub();
   setUiMode('registrar');
   const today=todayStr();
-  els.filterDate.value=today;els.reportDateFrom.value=today;els.reportDateTo.value=today;
+  els.filterDate.value=today; els.reportDateFrom.value=today; els.reportDateTo.value=today;
   renderAll();
-  if(needsSetup()){showSetupWizard();setStatus('Заполните данные точки.','warn')}
+  if(needsSetup()){ showSetupWizard(); setSt('Заполните данные точки.','warn'); }
   syncData().catch(()=>{});
-  if(typeof faceapi!=='undefined'){await loadModels();try{await startCamera()}catch{}}
-  else setFaceStatus('face-api не загружен','err');
-  setInterval(updateMealButton,60000);
+  if(typeof faceapi!=='undefined'){ await loadModels(); try{await startCamera();}catch{} }
+  else setFS('face-api не загружен','err');
+  setInterval(updateMealButton, 60000); // обновляем тип питания раз в минуту
 }
 
-window.addEventListener('load',init);
+window.addEventListener('load', init);
 </script>
 </body>
 </html>
-
