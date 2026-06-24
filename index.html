@@ -774,10 +774,14 @@ function renderSelectedEmployee() {
 // Google Sheets возвращает булевы значения как TRUE/FALSE (заглавные) в JSON
 // Поэтому проверяем все возможные варианты: true, 'true', 'TRUE', 'True'
 function isExtraRow(r) {
+  // Источник 1: поле extraMeal (Google Sheets может вернуть true/'true'/'TRUE')
   const v = r.extraMeal;
   if(v===true) return true;
-  const s = String(v||'').toLowerCase();
-  return s==='true';
+  if(String(v||'').toLowerCase()==='true') return true;
+  // Источник 2: mealType === 'Доп. питание' — главная проверка с v3.0
+  // Бэкенд теперь ВСЕГДА пишет именно такой тип для доп. питания
+  if(String(r.mealType||'')==='Доп. питание') return true;
+  return false;
 }
 
 function filteredMeals() {
@@ -788,7 +792,9 @@ function filteredMeals() {
     const okTxt  = !txt  || [r.employeeName,r.staffId,r.department].join(' ').toLowerCase().includes(txt);
     const okDate = !date || String(r.date||(r.timestamp||'').slice(0,10))===date;
     const okMeal = !meal ||
-      (meal==='extra' ? isExtraRow(r) : r.mealType===meal && !isExtraRow(r));
+      (meal==='extra'
+        ? isExtraRow(r)  // isExtraRow уже проверяет и флаг и mealType
+        : r.mealType===meal && !isExtraRow(r));
     return okTxt&&okDate&&okMeal;
   }).sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp)));
 }
@@ -796,7 +802,7 @@ function filteredMeals() {
 function renderJournal() {
   const rows = filteredMeals();
   els.journalBody.innerHTML = rows.map(r=>{
-    const extra = isExtraRow(r) || r.mealType==='Доп. питание';
+    const extra = isExtraRow(r);
     const label = extra ? 'Доп.' : r.mealType;
     return `<tr>
       <td>${fmtDT(r.timestamp)}</td>
@@ -808,10 +814,10 @@ function renderJournal() {
     </tr>`;
   }).join('');
   els.statTotal.textContent     = rows.length;
-  els.statBreakfast.textContent = rows.filter(r=>r.mealType==='Завтрак'  && !isExtraRow(r) && r.mealType!=='Доп. питание').length;
-  els.statLunch.textContent     = rows.filter(r=>r.mealType==='Обед'     && !isExtraRow(r) && r.mealType!=='Доп. питание').length;
-  els.statDinner.textContent    = rows.filter(r=>r.mealType==='Ужин'     && !isExtraRow(r) && r.mealType!=='Доп. питание').length;
-  els.statExtra.textContent     = rows.filter(r=>isExtraRow(r)||r.mealType==='Доп. питание').length;
+  els.statBreakfast.textContent = rows.filter(r=>r.mealType==='Завтрак' && !isExtraRow(r)).length;
+  els.statLunch.textContent     = rows.filter(r=>r.mealType==='Обед'    && !isExtraRow(r)).length;
+  els.statDinner.textContent    = rows.filter(r=>r.mealType==='Ужин'    && !isExtraRow(r)).length;
+  els.statExtra.textContent     = rows.filter(isExtraRow).length;
 }
 
 /* ── Отчёты ──────────────────────────────────────────────────── */
@@ -839,15 +845,13 @@ function aggregateByEmployee(rows) {
   rows.forEach(r=>{
     const k = String(r.employeeId||r.employeeName||'?');
     if(!map[k]) map[k]={ name:r.employeeName||'?', dept:r.department||'', staffId:r.staffId||'', br:0,lu:0,di:0,ex:0 };
-    // Считаем доп. питание по двум признакам:
-    // 1) флаг extraMeal=true (из любого источника)
-    // 2) ИЛИ mealType === 'Доп. питание' (фиксированный тип с v3.0)
-    // Двойная проверка защищает от старых записей и от разных форматов поля
-    if(isExtraRow(r) || r.mealType==='Доп. питание') map[k].ex++;
+    // isExtraRow проверяет ОБА признака: флаг extraMeal И mealType==='Доп. питание'
+    // Поэтому отдельная проверка mealType здесь не нужна
+    if(isExtraRow(r))           map[k].ex++;
     else if(r.mealType==='Завтрак') map[k].br++;
     else if(r.mealType==='Обед')    map[k].lu++;
     else if(r.mealType==='Ужин')    map[k].di++;
-    // Неизвестный тип — игнорируем, не ломаем счётчики
+    // Неизвестный тип — игнорируем
   });
   return Object.values(map).sort((a,b)=>String(a.name).localeCompare(String(b.name),'ru'));
 }
