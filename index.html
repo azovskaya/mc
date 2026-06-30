@@ -123,11 +123,11 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 </head>
 <body>
 
-<!-- ── Попап «Приятного аппетита!» ─────────────────────────── -->
+<!-- ── Попап подтверждения регистрации ─────────────────────── -->
 <div class="appetite-overlay" id="appetiteOverlay">
   <div class="appetite-box">
-    <div class="appetite-emoji">🍽️</div>
-    <div class="appetite-title">Приятного аппетита!</div>
+    <div class="appetite-emoji" id="appetiteEmoji">🍽️</div>
+    <div class="appetite-title" id="appetiteTitle">Вы зарегистрированы!</div>
     <div class="appetite-name" id="appetiteName"></div>
     <div class="appetite-meal" id="appetiteMeal"></div>
   </div>
@@ -186,7 +186,7 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
     <div class="registrar-only" style="margin-top:14px;">
       <!-- Основная кнопка — текущий тип питания по расписанию -->
       <button class="btn btn-success btn-meal" id="getMealBtn" type="button" disabled>
-        Получить питание <span id="mealTypeHint" style="font-size:15px;opacity:.85;margin-left:6px;"></span>
+        Спасибо за питание <span id="mealTypeHint" style="font-size:15px;opacity:.85;margin-left:6px;"></span>
       </button>
       <!-- Отдельная кнопка «+ Доп. питание» — всегда доступна после распознавания -->
       <!-- Нажатие открывает модальное окно с полем описания -->
@@ -509,6 +509,8 @@ const els = {
   priceEx:        document.getElementById('priceEx'),
   pricesStatus:   document.getElementById('pricesStatus'),
   appetiteOverlay:document.getElementById('appetiteOverlay'),
+  appetiteEmoji:  document.getElementById('appetiteEmoji'),
+  appetiteTitle:  document.getElementById('appetiteTitle'),
   appetiteName:   document.getElementById('appetiteName'),
   appetiteMeal:   document.getElementById('appetiteMeal'),
   extraMealModal: document.getElementById('extraMealModal'),
@@ -584,14 +586,24 @@ const parsePrice = v => { if(v===''||v==null) return null; const n=parseFloat(v)
 // Форматирование суммы
 const fmtMoney = n => n===null||n===undefined ? '—' : n.toLocaleString('ru-RU',{minimumFractionDigits:0,maximumFractionDigits:2})+' ₸';
 
-/* ── Попап «Приятного аппетита» ──────────────────────────────── */
+/* ── Попап подтверждения регистрации ──────────────────────────── */
 
+// Явное, однозначное подтверждение того, что регистрация прошла успешно.
+// Раньше попап «Приятного аппетита» был нейтральным и не говорил прямо,
+// что человек зарегистрирован — из-за этого операторы не были уверены
+// в результате и нажимали кнопку повторно, что приводило к дублям.
 function showAppetitePopup(empName, mealType, isExtra, note) {
-  // Строим текст типа питания; для доп. питания добавляем описание из note
-  let label = mealType;
-  if(isExtra) label = 'Доп. питание' + (note ? `: ${note}` : '');
-  els.appetiteName.textContent = empName||'';
-  els.appetiteMeal.textContent = label;
+  let title, mealLine;
+  if(isExtra) {
+    title = 'Приятного аппетита!';
+    mealLine = 'Доп. питание' + (note ? `: ${note}` : '');
+  } else {
+    title = 'Приятного аппетита!';
+    mealLine = String(mealType);
+  }
+  els.appetiteTitle.textContent = title;
+  els.appetiteName.textContent  = empName||'';
+  els.appetiteMeal.textContent  = mealLine;
   els.appetiteOverlay.classList.add('visible');
   setTimeout(()=>els.appetiteOverlay.classList.remove('visible'), 2500);
 }
@@ -696,17 +708,22 @@ function updateMealButton() {
   const btn  = els.getMealBtn;
   const extraBtn = els.extraMealBtn;
 
+  // Пока идёт отправка — явно показываем процесс, чтобы не было повторных кликов
+  if(_mealBusy) {
+    btn.disabled=true; btn.innerHTML='⏳ Регистрация…';
+    return;
+  }
   if(!meal) {
     btn.disabled=true; btn.innerHTML='Сейчас не время приёма пищи';
     extraBtn.classList.add('hidden'); return;
   }
   if(!emp||!state.verified) {
-    btn.disabled=true; btn.innerHTML='Получить питание ('+meal+') <span style="font-size:13px;opacity:.6">— нужно распознавание</span>';
+    btn.disabled=true; btn.innerHTML='Спасибо за '+meal.toLowerCase()+' <span style="font-size:13px;opacity:.6">— нужно распознавание</span>';
     extraBtn.classList.add('hidden'); return;
   }
   // Основная кнопка — всегда активна после распознавания
   btn.disabled=false;
-  btn.innerHTML='✓ Получить <strong>'+meal+'</strong>';
+  btn.innerHTML='✓ Спасибо за <strong>'+meal.toLowerCase()+'</strong>';
   // Кнопка «+ Доп. питание» — показываем после распознавания
   extraBtn.classList.remove('hidden');
 }
@@ -1152,6 +1169,7 @@ async function saveEmployeeRemote(){
   const fullName=els.empName.value.trim();
   if(!fullName){setSt('Введите ФИО.','warn');return;}
   if(!state.stream&&!state.capturedPhoto){setSt('Включите камеру и сделайте фото.','warn');return;}
+  const isNewEmployee = !state.selectedEmployeeId;
   let faceDescriptor='',photo=state.capturedPhoto||getSel()?.photo||'';
   try{
     setSt('Сохранение Face ID…','');
@@ -1166,7 +1184,10 @@ async function saveEmployeeRemote(){
   try{
     const data=await apiPost('saveEmployee',payload);
     if(data.ok===false||data.status==='error')throw new Error(data.message||'Ошибка');
-    setSt('Сотрудник сохранён.','ok'); state.selectedEmployeeId=payload.employeeId; state.capturedPhoto=photo;
+    // Чётко разделяем «создан новый» / «обновлён существующий» —
+    // чтобы администратор однозначно понимал результат действия
+    setSt(isNewEmployee ? '✅ Профиль добавлен: '+fullName : '✅ Профиль обновлён: '+fullName, 'ok');
+    state.selectedEmployeeId=payload.employeeId; state.capturedPhoto=photo;
     await syncData();
   }catch(e){setSt('Ошибка: '+e.message,'err');}
 }
@@ -1244,7 +1265,8 @@ let _mealBusy = false;
 async function doSaveMeal(mealType, isExtra, note) {
   if(_mealBusy) return;
   _mealBusy=true;
-  els.getMealBtn.disabled=true;
+  updateMealButton();
+  setKB('Регистрация…','');
   els.extraMealBtn.disabled=true;
 
   const emp = getSel();
@@ -1273,7 +1295,7 @@ async function doSaveMeal(mealType, isExtra, note) {
   try{
     const data = await apiPost('saveMeal', payload);
     if(data.ok===false||data.status==='error'){ setKB(data.message||'Ошибка сохранения.','err'); _mealBusy=false; updateMealButton(); els.extraMealBtn.disabled=false; return; }
-    // Показываем «Приятного аппетита!» с именем, типом, и описанием доп. питания
+    setKB('Приятного аппетита, '+emp.fullName+'!','ok');
     showAppetitePopup(emp.fullName, mealType, isExtra, note);
     await syncData();
     // После успеха — небольшая пауза перед сбросом сессии (пользователь видит попап)
