@@ -1326,10 +1326,10 @@ function startAutoScan(){
 
 function capturePhoto(){
   const v=els.video; if(!v.videoWidth)return;
-  const c=els.captureCanvas; const sc=Math.min(1,640/(v.videoWidth||640));
+  const c=els.captureCanvas; const sc=Math.min(1,480/(v.videoWidth||480));
   c.width=Math.round(v.videoWidth*sc); c.height=Math.round(v.videoHeight*sc);
   c.getContext('2d').drawImage(v,0,0,c.width,c.height);
-  state.capturedPhoto=c.toDataURL('image/jpeg',.72);
+  state.capturedPhoto=c.toDataURL('image/jpeg',.55);
   if(els.employeePhoto){els.employeePhoto.src=state.capturedPhoto;els.employeePhoto.style.visibility='visible';}
 }
 
