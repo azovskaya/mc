@@ -607,6 +607,30 @@ function saveSettings() {
     adminPin:     storedPin,
     prices:       state.prices
   }));
+  // Дублируем название точки и оператора на сервер (лист Settings),
+  // чтобы они подтягивались автоматически, даже если localStorage
+  // браузера очистится (киоск-режим, инкогнито и т.п.).
+  // Запрос фоновый — не блокирует и не мешает работе при отсутствии сети.
+  apiPost('saveSettings', {
+    siteName: els.siteName.value.trim(),
+    operator: els.operatorName.value.trim()
+  }).catch(()=>{});
+}
+
+// Подтягивает название точки/оператора с сервера, если они ещё
+// не заполнены локально (например, после очистки данных браузера).
+async function loadRemoteSettings() {
+  try {
+    const data = await apiGet('getSettings');
+    const s = data && data.settings;
+    if(!s) return;
+    if(!els.siteName.value.trim()     && s.siteName) els.siteName.value     = s.siteName;
+    if(!els.operatorName.value.trim() && s.operator) els.operatorName.value = s.operator;
+    if(s.siteName) state.setupDone = true;
+    updSub(); saveSettings();
+  } catch {
+    // Нет сети/сервер недоступен — просто работаем с тем, что есть локально
+  }
 }
 
 function loadSettings() {
@@ -1132,7 +1156,7 @@ async function saveEmployeeRemote(){
   try{
     setSt('Сохранение Face ID…','');
     if(!state.stream)await startCamera();
-    if(!state.capturedPhoto)capturePhoto();
+    if(!state.capturedPhoto)capturePhoto(true);
     const src=state.capturedPhoto?await loadImg(state.capturedPhoto):els.video;
     const desc=await computeDesc(src);
     if(!desc){setSt('Лицо не видно на фото.','err');return;}
@@ -1180,7 +1204,6 @@ async function identifyEmployeeFromVideo(){
     if(!(state.pendingBlinkSeen||maxDiff>=MIN_DESCRIPTOR_VAR)){setFS('Проверка живости…','warn');setKB('Моргните, пожалуйста','warn');return;}
     const emp=state.employees.find(e=>String(e.employeeId||e.id)===String(match.label));
     if(!emp){resetPending();return;}
-    capturePhoto();
     applyFaceMatch(emp,distToScore(match.distance));
     resetPending();
   }catch(e){setFS('Ошибка распознавания','err');}finally{state.scanBusy=false;}
@@ -1206,7 +1229,7 @@ async function verifyFace(){
     const stored=parseFDesc(emp.faceDescriptor); if(!stored){setSt('Сначала сохраните Face ID.','warn');return;}
     const dist=faceapi.euclideanDistance(det.descriptor,stored);
     state.verified=dist<DIST_OK; state.matchScore=distToScore(dist);
-    capturePhoto(); renderSelectedEmployee();
+    renderSelectedEmployee();
     setSt(state.verified?`Лицо подтверждено (${state.matchScore}%).`:'Совпадение недостаточно.',state.verified?'ok':'err');
     setFS(state.verified?'Подтверждено':'Не совпало',state.verified?'ok':'err');
   }catch(e){setSt('Ошибка: '+e.message,'err');}
@@ -1242,7 +1265,6 @@ async function doSaveMeal(mealType, isExtra, note) {
     siteName:     els.siteName.value.trim(),
     operator:     els.operatorName.value.trim(),
     matchScore:   state.matchScore,
-    photo:        state.capturedPhoto||emp.photo||'',
     verified:     true,
     // note: для доп. питания — пользовательское описание; для обычного — face_verified
     note:         isExtra ? (note||'доп. питание') : 'face_verified'
@@ -1324,12 +1346,20 @@ function startAutoScan(){
   state.scanTimer=setInterval(()=>{if(!state.verified&&!state.scanBusy)identifyEmployeeFromVideo();},FRAME_INTERVAL_MS);
 }
 
-function capturePhoto(){
+// capturePhoto(highQuality):
+//  - true  — для карточки сотрудника (Face ID/профиль). Сохраняется один раз
+//            на сотрудника, поэтому можно позволить хорошее качество.
+//  - false — для аудиторского кадра при получении питания. Такие снимки
+//            накапливаются каждый день (десятки/сотни в день), поэтому
+//            держим их компактными, чтобы не разрастался объём на Google Drive.
+function capturePhoto(highQuality){
   const v=els.video; if(!v.videoWidth)return;
-  const c=els.captureCanvas; const sc=Math.min(1,480/(v.videoWidth||480));
+  const targetWidth = highQuality ? 1280 : 360;
+  const quality      = highQuality ? 0.9  : 0.5;
+  const c=els.captureCanvas; const sc=Math.min(1,targetWidth/(v.videoWidth||targetWidth));
   c.width=Math.round(v.videoWidth*sc); c.height=Math.round(v.videoHeight*sc);
   c.getContext('2d').drawImage(v,0,0,c.width,c.height);
-  state.capturedPhoto=c.toDataURL('image/jpeg',.55);
+  state.capturedPhoto=c.toDataURL('image/jpeg',quality);
   if(els.employeePhoto){els.employeePhoto.src=state.capturedPhoto;els.employeePhoto.style.visibility='visible';}
 }
 
@@ -1361,7 +1391,7 @@ async function finishWizardSetup(){
 document.getElementById('saveConfigBtn').onclick = ()=>{ saveSettings();updSub();state.setupDone=true;saveSettings();setSt('Сохранено.','ok'); };
 document.getElementById('testApiBtn').onclick    = testApi;
 document.getElementById('syncBtn').onclick       = syncData;
-document.getElementById('captureBtn').onclick    = capturePhoto;
+document.getElementById('captureBtn').onclick    = ()=>capturePhoto(true);
 document.getElementById('newEmployeeBtn').onclick   = openNewEmployee;
 document.getElementById('saveEmployeeBtn').onclick  = saveEmployeeRemote;
 document.getElementById('verifyFaceBtn').onclick    = verifyFace;
@@ -1419,6 +1449,7 @@ async function init(){
   const today=todayStr();
   els.filterDate.value=today; els.reportDateFrom.value=today; els.reportDateTo.value=today;
   renderAll();
+  await loadRemoteSettings();
   if(needsSetup()){ showSetupWizard(); setSt('Заполните данные точки.','warn'); }
   syncData().catch(()=>{});
   if(typeof faceapi!=='undefined'){ await loadModels(); try{await startCamera();}catch{} }
