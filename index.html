@@ -704,28 +704,42 @@ function updateRecognizedDisplay(emp) {
 function updateMealButton() {
   if(state.uiMode!=='registrar') return;
   const meal = getCurrentMealType();
-  const emp  = getSel();
-  const btn  = els.getMealBtn;
+  const emp = getSel();
+  const btn = els.getMealBtn;
   const extraBtn = els.extraMealBtn;
 
-  // Пока идёт отправка — явно показываем процесс, чтобы не было повторных кликов
+  // Сначала управляем кнопкой «Доп. питание»: она должна быть видна ВСЕГДА, 
+  // если сотрудник успешно распознан, независимо от времени суток и блокировок основной кнопки
+  if(emp && state.verified) {
+    extraBtn.classList.remove('hidden');
+    // Если сейчас отправляется доп. питание, блокируем её, иначе она активна
+    extraBtn.disabled = _mealBusy; 
+  } else {
+    extraBtn.classList.add('hidden');
+  }
+
+  // Теперь управляем основной кнопкой «Спасибо за обед»
   if(_mealBusy) {
-    btn.disabled=true; btn.innerHTML='⏳ Регистрация…';
+    btn.disabled=true;
+    btn.innerHTML='⏳ Регистрация…';
     return;
   }
+  
   if(!meal) {
-    btn.disabled=true; btn.innerHTML='Сейчас не время приёма пищи';
-    extraBtn.classList.add('hidden'); return;
+    btn.disabled=true;
+    btn.innerHTML='Сейчас не время приёма пищи';
+    return;
   }
+  
   if(!emp||!state.verified) {
-    btn.disabled=true; btn.innerHTML='Спасибо за '+meal.toLowerCase()+' <span style="font-size:13px;opacity:.6">— нужно распознавание</span>';
-    extraBtn.classList.add('hidden'); return;
+    btn.disabled=true;
+    btn.innerHTML='Спасибо за '+meal.toLowerCase()+' <span style="font-size:13px;opacity:.6">— нужно распознавание</span>';
+    return;
   }
-  // Основная кнопка — всегда активна после распознавания
+
+  // Если всё ок — активируем основную кнопку
   btn.disabled=false;
   btn.innerHTML='✓ Спасибо за <strong>'+meal.toLowerCase()+'</strong>';
-  // Кнопка «+ Доп. питание» — показываем после распознавания
-  extraBtn.classList.remove('hidden');
 }
 
 function resetRegistrarSession() {
@@ -1299,7 +1313,7 @@ async function doSaveMeal(mealType, isExtra, note) {
     showAppetitePopup(emp.fullName, mealType, isExtra, note);
     await syncData();
     // После успеха — небольшая пауза перед сбросом сессии (пользователь видит попап)
-    setTimeout(()=>{ _mealBusy=false; resetRegistrarSession(); }, 2600);
+    setTimeout(()=>{ _mealBusy=false;updateMealButton(); }, 2600);
   }catch(e){
     setKB('Ошибка: '+e.message,'err');
     _mealBusy=false; updateMealButton(); els.extraMealBtn.disabled=false;
