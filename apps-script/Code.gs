@@ -11,12 +11,17 @@
  *        Выполнять от имени: «Я»
  *        Доступ:           «Все»
  *     Нажмите «Развернуть» и скопируйте URL, оканчивающийся на /exec.
- *  5. Вставьте этот URL в файле public/kiosk.html в константу
- *     API_URL (вверху <script>). Опубликуйте сайт заново.
+ *  5. Вставьте этот URL в index.html (константа DEFAULT_API_URL) или
+ *     в настройках киоска на вкладке «Настройки».
  *
  * После этого приложение всегда работает с этим бэкендом без
  * каких-либо ручных настроек URL в интерфейсе.
  *
+ * ─────────────────────────────────────────────────────────────────
+ * ИСПРАВЛЕНИЯ v2.2:
+ *  6. Фото: ссылки Google Drive (/view) нормализуются в uc?export=view;
+ *     новые снимки (base64) загружаются в папку MealKioskPhotos на Drive.
+ *  7. saveSettings сохраняет цены питания (priceBr/Lu/Di/Ex).
  * ─────────────────────────────────────────────────────────────────
  * ИСПРАВЛЕНИЯ v2.1:
  *  1. Колонки date/time листа Meals принудительно форматируются как
@@ -55,6 +60,7 @@ var SHEET_SETTINGS  = 'Settings';
 // независимо от того, Завтрак/Обед/Ужин. НЕ применяется к
 // доп. питанию (extraMeal=true) — см. saveMeal().
 var COOLDOWN_MINUTES = 60;
+var PHOTO_FOLDER_NAME = 'MealKioskPhotos';
 
 var EMPLOYEE_HEADERS = [
   'employeeId', 'fullName', 'staffId', 'department', 'position',
@@ -80,7 +86,7 @@ function doGet(e) {
     var action = (e && e.parameter && e.parameter.action) || '';
     switch (action) {
       case 'ping':
-        return respond({ ok: true, message: 'pong', version: '2.1', cooldownMinutes: COOLDOWN_MINUTES });
+        return respond({ ok: true, message: 'pong', version: '2.2', cooldownMinutes: COOLDOWN_MINUTES });
       case 'listEmployees':
         return respond({ ok: true, items: listEmployees() });
       case 'listMeals':
@@ -198,6 +204,9 @@ function listEmployees() {
   var sheet = getOrCreateSheet_(SHEET_EMPLOYEES, EMPLOYEE_HEADERS);
   return sheetToObjects_(sheet).filter(function(e) {
     return e.active !== false && e.active !== 'false' && String(e.active).toLowerCase() !== 'нет';
+  }).map(function(e) {
+    e.photo = normalizePhotoUrl_(e.photo);
+    return e;
   });
 }
 
@@ -227,7 +236,7 @@ function saveEmployee(body) {
     staffId: String(body.staffId || '').slice(0, 40),
     department: String(body.department || '').slice(0, 80),
     position: String(body.position || '').slice(0, 80),
-    photo: truncatePhoto_(body.photo || (existing && existing.photo) || ''),
+    photo: preparePhoto_(body.photo || (existing && existing.photo) || '', 'emp_' + id + '.jpg'),
     faceDescriptor: body.faceDescriptor || (existing && existing.faceDescriptor) || '',
     active: body.active !== false,
     createdAt: (existing && existing.createdAt) || now,
@@ -327,7 +336,7 @@ function saveMeal(body) {
       siteName: body.siteName || '',
       operator: body.operator || '',
       matchScore: body.matchScore !== undefined ? body.matchScore : '',
-      photo: truncatePhoto_(body.photo || ''),
+      photo: preparePhoto_(body.photo || '', 'meal_' + (body.mealId || Utilities.getUuid()) + '.jpg'),
       verified: body.verified !== false,
       note: body.note || ''
     };
@@ -390,6 +399,10 @@ function saveSettings(body) {
   var toSave = {};
   if (body.siteName !== undefined) toSave.siteName = body.siteName;
   if (body.operator !== undefined) toSave.operator = body.operator;
+  if (body.priceBr !== undefined) toSave.priceBr = body.priceBr;
+  if (body.priceLu !== undefined) toSave.priceLu = body.priceLu;
+  if (body.priceDi !== undefined) toSave.priceDi = body.priceDi;
+  if (body.priceEx !== undefined) toSave.priceEx = body.priceEx;
 
   Object.keys(toSave).forEach(function (key) {
     var rowNum = findRowById_(sheet, 'key', key);
@@ -404,9 +417,79 @@ function saveSettings(body) {
   return { ok: true, settings: getSettings() };
 }
 
+function extractDriveFileId_(url) {
+  if (!url) return '';
+  var s = String(url).trim();
+  var match = s.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+  match = s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : '';
+}
+
+function driveImageUrl_(fileId) {
+  return 'https://drive.google.com/uc?export=view&id=' + fileId;
+}
+
+function normalizePhotoUrl_(photo) {
+  if (!photo) return '';
+  var s = String(photo).trim();
+  if (!s) return '';
+  if (s.indexOf('data:image') === 0) return s;
+  var fileId = extractDriveFileId_(s);
+  if (fileId) return driveImageUrl_(fileId);
+  if (s.indexOf('http') === 0) return s;
+  return s;
+}
+
+function getPhotoFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var folderId = props.getProperty('photoFolderId');
+  if (folderId) {
+    try {
+      return DriveApp.getFolderById(folderId);
+    } catch (e) {}
+  }
+  var folders = DriveApp.getFoldersByName(PHOTO_FOLDER_NAME);
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(PHOTO_FOLDER_NAME);
+  props.setProperty('photoFolderId', folder.getId());
+  return folder;
+}
+
+function savePhotoToDrive_(base64Data, fileName) {
+  var parts = String(base64Data).split(',');
+  if (parts.length < 2) throw new Error('Invalid image data');
+  var mimeMatch = parts[0].match(/data:(.*?);/);
+  var mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  var bytes = Utilities.base64Decode(parts[1]);
+  var blob = Utilities.newBlob(bytes, mime, fileName || ('photo_' + Date.now() + '.jpg'));
+  var file = getPhotoFolder_().createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return driveImageUrl_(file.getId());
+}
+
+function preparePhoto_(photo, fileName) {
+  if (!photo) return '';
+  var s = String(photo).trim();
+  if (!s) return '';
+  if (s.indexOf('data:image') === 0) {
+    try {
+      return savePhotoToDrive_(s, fileName);
+    } catch (e) {
+      return truncatePhoto_(s);
+    }
+  }
+  return normalizePhotoUrl_(s);
+}
+
 function truncatePhoto_(photo) {
   if (!photo) return '';
-  var s = String(photo);
+  var s = String(photo).trim();
+  if (s.indexOf('http') === 0 || s.indexOf('drive.google') >= 0) {
+    return normalizePhotoUrl_(s);
+  }
+  if (s.indexOf('data:image') === 0) {
+    return s.length <= 45000 ? s : s.slice(0, 45000);
+  }
   return s.length <= 45000 ? s : s.slice(0, 45000);
 }
 

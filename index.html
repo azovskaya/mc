@@ -358,8 +358,15 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 
       <div class="card" style="margin-top:14px;">
         <div class="section-title">Бэкенд</div>
-        <p class="mini">URL Apps Script зашит в константу <code>API_URL</code> в начале скрипта.</p>
-        <div class="toolbar"><button class="btn" id="openWizardBtn" type="button">Инструкция по бэкенду</button></div>
+        <p class="mini">URL веб-приложения Google Apps Script (оканчивается на <code>/exec</code>).</p>
+        <div style="margin-top:10px;">
+          <label for="apiUrlInput">URL Apps Script</label>
+          <input id="apiUrlInput" placeholder="https://script.google.com/macros/s/.../exec" maxlength="500"/>
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-primary" id="saveApiUrlBtn" type="button">Сохранить URL</button>
+          <button class="btn" id="openWizardBtn" type="button">Инструкция по бэкенду</button>
+        </div>
       </div>
     </section>
   </aside>
@@ -387,7 +394,7 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
         2. Расширения → Apps Script → вставьте Code.gs.<br>
         3. Запустите <code>setupSheets</code>.<br>
         4. Развернуть → Веб-приложение, доступ: Все. Скопируйте URL.<br>
-        5. Замените <code>API_URL</code> в index.html.
+        5. Вставьте URL на вкладке «Настройки» киоска или в DEFAULT_API_URL.
       </p>
     </details>
   </div>
@@ -409,15 +416,12 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 
 <script>
 /* =================================================================
-   Питание Персонала v3.1 — клиентская часть
-   Изменения v3.1 (исправления):
-     - ИСПРАВЛЕНО: отчёты и журнал больше не фильтруются по "битой"
-       колонке date (Google Sheets авто-конвертирует текстовые даты
-       в тип Date, из-за чего строковое сравнение ломалось). Теперь
-       везде дата берётся из timestamp (ISO-строка), который Sheets
-       не трогает.
-     - ИСПРАВЛЕНО: поле extraMeal реально передаётся и используется
-       для освобождения доп. питания от cooldown на сервере.
+   Питание Персонала v3.2 — клиентская часть
+   v3.2:
+     - Google Drive ссылки (/view) конвертируются для <img>
+     - Даты отчётов в timezone Asia/Almaty + поле date
+     - Фото при выдаче питания, сброс сессии после успеха
+     - Цены и API URL в настройках / на сервере
    Изменения v3.0:
      1. Спиннер-блокировка кнопки при двойном клике (debounce)
      2. Фильтр отчёта по ФИО сотрудника
@@ -426,8 +430,9 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
      5. Кнопка «+ Доп. питание» с модальным окном описания
    ================================================================= */
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbxLNmIuvlRwFaenkTsWRRXNoRQb2Y9YID-fJzF5j2OJmDlbTAvikMTJvp7LpDUWKsxO/exec';
-const SETTINGS_KEY = 'meal_kiosk_settings_v7';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxLNmIuvlRwFaenkTsWRRXNoRQb2Y9YID-fJzF5j2OJmDlbTAvikMTJvp7LpDUWKsxO/exec';
+const SETTINGS_KEY = 'meal_kiosk_settings_v8';
+const APP_TIMEZONE = 'Asia/Almaty';
 const DEFAULT_PIN  = '1234';
 
 // Окна приёма пищи (минуты от полуночи)
@@ -502,6 +507,7 @@ const els = {
   reportEmp:      document.getElementById('reportEmp'),
   reportEmpList:  document.getElementById('reportEmpList'),
   reportContent:  document.getElementById('reportContent'),
+  apiUrlInput:    document.getElementById('apiUrlInput'),
   setupWizard:    document.getElementById('setupWizard'),
   wizSiteName:    document.getElementById('wizSiteName'),
   wizOperator:    document.getElementById('wizOperator'),
@@ -550,6 +556,45 @@ function getCurrentMealType() {
 
 const esc = s => String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
+function extractDriveFileId(url) {
+  const s = String(url || '').trim();
+  const m = s.match(/\/d\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+
+function photoDisplayUrl(photo) {
+  if (!photo) return '';
+  const s = String(photo).trim();
+  if (s.startsWith('data:image/')) return s;
+  const fileId = extractDriveFileId(s);
+  if (fileId) return `https://drive.google.com/uc?export=view&id=${fileId}`;
+  if (/^https?:\/\//i.test(s)) return s;
+  return '';
+}
+
+function setPhotoSrc(img, photo) {
+  if (!img) return;
+  const src = photoDisplayUrl(photo);
+  if (!src) {
+    img.removeAttribute('src');
+    img.style.visibility = 'hidden';
+    return;
+  }
+  img.referrerPolicy = 'no-referrer';
+  img.onerror = () => {
+    img.style.visibility = 'hidden';
+    img.alt = 'Фото недоступно';
+  };
+  img.src = src;
+  img.style.visibility = 'visible';
+}
+
+function photoCellHtml(photo) {
+  const src = photoDisplayUrl(photo);
+  if (!src) return '—';
+  return `<img class="avatar" style="width:48px;height:48px;border-radius:10px;object-fit:cover" src="${src.replace(/"/g, '&quot;')}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='—'">`;
+}
+
 function csvEsc(v) { const s=String(v??''); return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
 
 function fmtDT(iso) {
@@ -565,18 +610,15 @@ function fmtDate(s) {
   return `${d}.${mo}.${y}`;
 }
 
-// ЕДИНАЯ функция получения "даты выдачи" (YYYY-MM-DD) для записи журнала.
-// ВАЖНО: намеренно берём дату из timestamp (ISO-строка с "T"), а НЕ из
-// поля date. Поле date в Google Sheets авто-конвертируется в тип Date при
-// записи текстовой строки вида "2026-07-18" (это дефолтное поведение
-// таблиц), и после сериализации в JSON превращается в полноценный ISO-
-// timestamp вроде "2026-07-18T00:00:00.000Z" (возможно, ещё и со сдвигом
-// на сутки из-за часового пояса). Строковое сравнение такой "даты" с
-// обычной "YYYY-MM-DD" ломает все фильтры по датам. timestamp пишется
-// как ISO-строка с буквой "T" и Google Sheets её не трогает — поэтому
-// он надёжен.
+// Дата выдачи для фильтров журнала и отчётов (YYYY-MM-DD, Asia/Almaty).
 function rowDateStr(r) {
-  return String(r.timestamp||'').slice(0,10);
+  const rawDate = String(r.date || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) return rawDate;
+  const ts = r.timestamp;
+  if (!ts) return '';
+  const dt = new Date(ts);
+  if (Number.isNaN(dt.getTime())) return String(ts).slice(0, 10);
+  return dt.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
 }
 
 function badgeClass(meal,isExtra) {
@@ -632,6 +674,16 @@ function showAppetitePopup(empName, mealType, isExtra, note) {
 
 /* ── Настройки ───────────────────────────────────────────────── */
 
+function getApiUrl() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    const url = (s.apiUrl || DEFAULT_API_URL || '').trim();
+    return url || DEFAULT_API_URL;
+  } catch {
+    return DEFAULT_API_URL;
+  }
+}
+
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({
     siteName:     els.siteName.value.trim(),
@@ -639,15 +691,16 @@ function saveSettings() {
     uiMode:       state.uiMode,
     setupDone:    state.setupDone,
     adminPin:     storedPin,
-    prices:       state.prices
+    prices:       state.prices,
+    apiUrl:       (els.apiUrlInput && els.apiUrlInput.value.trim()) || getApiUrl()
   }));
-  // Дублируем название точки и оператора на сервер (лист Settings),
-  // чтобы они подтягивались автоматически, даже если localStorage
-  // браузера очистится (киоск-режим, инкогнито и т.п.).
-  // Запрос фоновый — не блокирует и не мешает работе при отсутствии сети.
   apiPost('saveSettings', {
     siteName: els.siteName.value.trim(),
-    operator: els.operatorName.value.trim()
+    operator: els.operatorName.value.trim(),
+    priceBr: state.prices.br ?? '',
+    priceLu: state.prices.lu ?? '',
+    priceDi: state.prices.di ?? '',
+    priceEx: state.prices.ex ?? ''
   }).catch(()=>{});
 }
 
@@ -661,6 +714,20 @@ async function loadRemoteSettings() {
     if(!els.siteName.value.trim()     && s.siteName) els.siteName.value     = s.siteName;
     if(!els.operatorName.value.trim() && s.operator) els.operatorName.value = s.operator;
     if(s.siteName) state.setupDone = true;
+    const remotePrices = {
+      br: s.priceBr !== undefined && s.priceBr !== '' ? parsePrice(s.priceBr) : null,
+      lu: s.priceLu !== undefined && s.priceLu !== '' ? parsePrice(s.priceLu) : null,
+      di: s.priceDi !== undefined && s.priceDi !== '' ? parsePrice(s.priceDi) : null,
+      ex: s.priceEx !== undefined && s.priceEx !== '' ? parsePrice(s.priceEx) : null,
+    };
+    const hasRemotePrices = Object.values(remotePrices).some(v => v !== null);
+    if (hasRemotePrices) {
+      state.prices = remotePrices;
+      els.priceBr.value = remotePrices.br ?? '';
+      els.priceLu.value = remotePrices.lu ?? '';
+      els.priceDi.value = remotePrices.di ?? '';
+      els.priceEx.value = remotePrices.ex ?? '';
+    }
     updSub(); saveSettings();
   } catch {
     // Нет сети/сервер недоступен — просто работаем с тем, что есть локально
@@ -675,6 +742,7 @@ function loadSettings() {
     storedPin              = s.adminPin    ||DEFAULT_PIN;
     state.uiMode           = s.uiMode==='admin'?'admin':'registrar';
     state.setupDone        = !!s.setupDone;
+    if (els.apiUrlInput) els.apiUrlInput.value = s.apiUrl || DEFAULT_API_URL;
     if(s.prices) {
       state.prices = { br:s.prices.br??null, lu:s.prices.lu??null, di:s.prices.di??null, ex:s.prices.ex??null };
       els.priceBr.value = s.prices.br??''; els.priceLu.value = s.prices.lu??'';
@@ -687,7 +755,7 @@ const needsSetup = () => !state.setupDone||!els.siteName.value.trim();
 
 /* ── API ──────────────────────────────────────────────────────── */
 
-const apiUrl = a => API_URL+(API_URL.includes('?')?'&':'?')+'action='+encodeURIComponent(a);
+const apiUrl = a => getApiUrl()+(getApiUrl().includes('?')?'&':'?')+'action='+encodeURIComponent(a);
 
 async function apiGet(action, params={}) {
   const url = new URL(apiUrl(action));
@@ -780,8 +848,18 @@ const hideSetupWizard = () => els.setupWizard.classList.add('hidden');
 const setWizSt = (t,c='') => { els.wizStatus.textContent=t; els.wizStatus.className='status'+(c?' '+c:''); };
 
 /* ── PIN ─────────────────────────────────────────────────────── */
-const showPinModal = () => { state.pinInput=''; updPinDots(); els.pinError.textContent=''; els.pinModal.classList.remove('hidden'); };
+const showPinModal = () => { state.pinInput=''; rebuildPinDots(); els.pinError.textContent=''; els.pinModal.classList.remove('hidden'); };
 const hidePinModal = () => { els.pinModal.classList.add('hidden'); state.pinInput=''; };
+
+function rebuildPinDots() {
+  els.pinDots.innerHTML = '';
+  const len = Math.max(4, Math.min(6, storedPin.length || 4));
+  for (let i = 0; i < len; i++) {
+    const dot = document.createElement('span');
+    dot.className = 'pin-dot';
+    els.pinDots.appendChild(dot);
+  }
+}
 
 function updPinDots() {
   els.pinDots.querySelectorAll('.pin-dot').forEach((d,i)=>d.classList.toggle('filled',i<state.pinInput.length));
@@ -813,7 +891,7 @@ function renderEmployeeOptions() {
   els.employeeSelect.innerHTML = '<option value="">— Выберите —</option>' +
     state.employees.map(e=>`<option value="${esc(e.employeeId||e.id)}">${esc(e.fullName)}</option>`).join('');
   els.employeesBody.innerHTML = state.employees.map(e=>`<tr>
-    <td>${e.photo?`<img class="avatar" style="width:48px;height:48px;border-radius:10px" src="${esc(e.photo)}">`:'—'}</td>
+    <td>${photoCellHtml(e.photo)}</td>
     <td>${esc(e.fullName)}</td><td>${esc(e.staffId||'')}</td><td>${esc(e.department||'')}</td>
     <td><button class="btn btn-ghost" data-emp="${esc(e.employeeId||e.id)}" type="button">Выбрать</button></td>
   </tr>`).join('');
@@ -841,7 +919,7 @@ function renderSelectedEmployee() {
   if(!emp){ openNewEmployee(); els.employeeName.textContent='Сотрудник не выбран'; els.employeeInfo.textContent='Добавьте сотрудника и снимите эталон лица.'; return; }
   els.employeeName.textContent=emp.fullName||'';
   els.employeeInfo.textContent=[emp.department,emp.position,emp.staffId].filter(Boolean).join(' • ')||'';
-  els.employeePhoto.src=state.capturedPhoto||emp.photo||''; els.employeePhoto.style.visibility=(state.capturedPhoto||emp.photo)?'visible':'hidden';
+  setPhotoSrc(els.employeePhoto, state.capturedPhoto || emp.photo);
   els.matchInfo.textContent='Совпадение: '+(state.matchScore!==null?state.matchScore+'%':'—');
   els.empName.value=emp.fullName||'';els.empId.value=emp.staffId||'';els.empDept.value=emp.department||'';els.empPos.value=emp.position||'';
 }
@@ -1063,7 +1141,15 @@ function buildDayReport(rows) {
 }
 
 function buildReport() {
+  if (!state.meals.length) {
+    els.reportContent.innerHTML = '<p class="status warn">Нет данных о выдачах. Нажмите «Обновить данные» и проверьте связь с API.</p>';
+    return;
+  }
   const rows = getReportRows();
+  if (!rows.length) {
+    els.reportContent.innerHTML = '<p class="status warn">За выбранный период записей нет. Измените даты или фильтры.</p>';
+    return;
+  }
   const mode = document.querySelector('input[name="reportMode"]:checked')?.value||'summary';
   els.reportContent.innerHTML = mode==='byday' ? buildDayReport(rows) : buildSummaryReport(rows);
 }
@@ -1176,13 +1262,13 @@ async function syncData() {
     const [emp,meals]=await Promise.all([apiGet('listEmployees'),apiGet('listMeals',{limit:1000})]);
     state.employees=Array.isArray(emp)?emp:(emp.items||[]);
     state.meals=Array.isArray(meals)?meals:(meals.items||[]);
-    renderAll(); setSt('Данные обновлены.','ok');
-  }catch(e){ setSt('Ошибка загрузки: '+e.message,'err'); }
+    renderAll(); setSt(`Данные обновлены: ${state.employees.length} сотр., ${state.meals.length} выдач.`,'ok');
+  }catch(e){ setSt('Ошибка загрузки: '+e.message,'err'); setKB('Нет связи с сервером. Проверьте URL Apps Script.','warn'); }
 }
 
 /* ── Face API ─────────────────────────────────────────────────── */
 
-async function loadImg(dataUrl){ return new Promise((res,rej)=>{ const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=dataUrl; }); }
+async function loadImg(dataUrl){ return new Promise((res,rej)=>{ const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=rej; i.src=photoDisplayUrl(dataUrl)||dataUrl; }); }
 
 async function detectFace(src){ return faceapi.detectSingleFace(src,new faceapi.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:.5})).withFaceLandmarks().withFaceDescriptor(); }
 
@@ -1220,10 +1306,9 @@ async function saveEmployeeRemote(){
   try{
     const data=await apiPost('saveEmployee',payload);
     if(data.ok===false||data.status==='error')throw new Error(data.message||'Ошибка');
-    // Чётко разделяем «создан новый» / «обновлён существующий» —
-    // чтобы администратор однозначно понимал результат действия
     setSt(isNewEmployee ? '✅ Профиль добавлен: '+fullName : '✅ Профиль обновлён: '+fullName, 'ok');
-    state.selectedEmployeeId=payload.employeeId; state.capturedPhoto=photo;
+    state.selectedEmployeeId=payload.employeeId;
+    state.capturedPhoto = (data.employee && data.employee.photo) || photo;
     await syncData();
   }catch(e){setSt('Ошибка: '+e.message,'err');}
 }
@@ -1308,12 +1393,18 @@ async function doSaveMeal(mealType, isExtra, note) {
   const emp = getSel();
   if(!emp||!state.verified){ setKB('Сначала распознайте лицо.','warn'); _mealBusy=false; updateMealButton(); return; }
 
+  let mealPhoto = '';
+  if (state.stream) {
+    capturePhoto(false);
+    mealPhoto = state.capturedPhoto || '';
+  }
+
   const now = new Date();
   const payload = {
     mealId:       genUUID(),
     timestamp:    now.toISOString(),
-    date:         todayStr(),
-    time:         now.toLocaleTimeString('ru-RU'),
+    date:         now.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }),
+    time:         now.toLocaleTimeString('ru-RU', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     employeeId:   emp.employeeId||emp.id,
     employeeName: emp.fullName,
     staffId:      emp.staffId||'',
@@ -1324,7 +1415,7 @@ async function doSaveMeal(mealType, isExtra, note) {
     operator:     els.operatorName.value.trim(),
     matchScore:   state.matchScore,
     verified:     true,
-    // note: для доп. питания — пользовательское описание; для обычного — face_verified
+    photo:        mealPhoto,
     note:         isExtra ? (note||'доп. питание') : 'face_verified'
   };
 
@@ -1340,8 +1431,12 @@ async function doSaveMeal(mealType, isExtra, note) {
     setKB('Приятного аппетита, '+emp.fullName+'!','ok');
     showAppetitePopup(emp.fullName, mealType, isExtra, note);
     await syncData();
-    // После успеха — небольшая пауза перед сбросом сессии (пользователь видит попап)
-    setTimeout(()=>{ _mealBusy=false;updateMealButton(); }, 2600);
+    setTimeout(()=>{
+      _mealBusy=false;
+      updateMealButton();
+      els.extraMealBtn.disabled=false;
+      resetRegistrarSession();
+    }, 2600);
   }catch(e){
     setKB('Ошибка: '+e.message,'err');
     _mealBusy=false; updateMealButton(); els.extraMealBtn.disabled=false;
@@ -1424,7 +1519,7 @@ function capturePhoto(highQuality){
   c.width=Math.round(v.videoWidth*sc); c.height=Math.round(v.videoHeight*sc);
   c.getContext('2d').drawImage(v,0,0,c.width,c.height);
   state.capturedPhoto=c.toDataURL('image/jpeg',quality);
-  if(els.employeePhoto){els.employeePhoto.src=state.capturedPhoto;els.employeePhoto.style.visibility='visible';}
+  if(els.employeePhoto) setPhotoSrc(els.employeePhoto, state.capturedPhoto);
 }
 
 async function loadModels(){
@@ -1447,7 +1542,7 @@ async function finishWizardSetup(){
     state.setupDone=true; saveSettings(); await syncData();
     setWizSt('Готово!','ok');
     setTimeout(()=>{hideSetupWizard();setUiMode('registrar');startCamera().catch(()=>{});},600);
-  }catch(e){setWizSt('Ошибка: '+e.message+'. Проверьте API_URL в коде.','err');}
+  }catch(e){setWizSt('Ошибка: '+e.message+'. Проверьте URL Apps Script в настройках.','err');}
 }
 
 /* ── Обработчики событий ─────────────────────────────────────── */
@@ -1474,8 +1569,22 @@ document.getElementById('savePinBtn').onclick = ()=>{
 document.getElementById('savePricesBtn').onclick = ()=>{
   state.prices={ br:parsePrice(els.priceBr.value), lu:parsePrice(els.priceLu.value), di:parsePrice(els.priceDi.value), ex:parsePrice(els.priceEx.value) };
   saveSettings();
-  els.pricesStatus.textContent='Цены сохранены.'; els.pricesStatus.className='status ok';
+  els.pricesStatus.textContent='Цены сохранены (локально и на сервере).'; els.pricesStatus.className='status ok';
   if(state.activeTab==='reports')buildReport();
+};
+
+document.getElementById('saveApiUrlBtn').onclick = ()=>{
+  const url = (els.apiUrlInput.value || '').trim();
+  if (!url || !/^https:\/\/script\.google\.com\/.+\/exec/.test(url)) {
+    setSt('Укажите корректный URL Apps Script (…/exec).', 'warn');
+    return;
+  }
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+    ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'),
+    apiUrl: url,
+  }));
+  els.apiUrlInput.value = url;
+  setSt('URL сохранён. Нажмите «Проверить связь».', 'ok');
 };
 
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
@@ -1515,7 +1624,7 @@ async function init(){
   renderAll();
   await loadRemoteSettings();
   if(needsSetup()){ showSetupWizard(); setSt('Заполните данные точки.','warn'); }
-  syncData().catch(()=>{});
+  await syncData().catch(()=>{});
   if(typeof faceapi!=='undefined'){ await loadModels(); try{await startCamera();}catch{} }
   else setFS('face-api не загружен','err');
   setInterval(updateMealButton, 60000); // обновляем тип питания раз в минуту
