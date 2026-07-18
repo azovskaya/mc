@@ -567,8 +567,12 @@ function photoDisplayUrl(photo) {
   const s = String(photo).trim();
   if (s.startsWith('data:image/')) return s;
   const fileId = extractDriveFileId(s);
-  if (fileId) return `https://drive.google.com/uc?export=view&id=${fileId}`;
-  if (/^https?:\/\//i.test(s)) return s;
+  if (fileId) return `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
+  if (/^https?:\/\//i.test(s)) {
+    const embeddedId = extractDriveFileId(s);
+    if (embeddedId) return `https://drive.google.com/thumbnail?id=${embeddedId}&sz=w400`;
+    return s;
+  }
   return '';
 }
 
@@ -593,6 +597,10 @@ function photoCellHtml(photo) {
   const src = photoDisplayUrl(photo);
   if (!src) return '—';
   return `<img class="avatar" style="width:48px;height:48px;border-radius:10px;object-fit:cover" src="${src.replace(/"/g, '&quot;')}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='—'">`;
+}
+
+function normalizeMealsList(items) {
+  return (items || []).filter(r => r && r.mealId && r.employeeName !== undefined && r.employeeName !== null);
 }
 
 function csvEsc(v) { const s=String(v??''); return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
@@ -1252,23 +1260,45 @@ function renderAll() { renderEmployeeOptions(); renderSelectedEmployee(); render
 /* ── API: тест / синхронизация ──────────────────────────────── */
 
 async function testApi() {
-  try{ const d=await apiGet('ping'); setSt(d.ok||d.message==='pong'?'Бэкенд доступен.':'Бэкенд отвечает с ошибкой.',d.ok?'ok':'warn'); }
+  try{
+    const d=await apiGet('ping');
+    const ver = d.version ? ` (API v${d.version})` : '';
+    setSt((d.ok||d.message==='pong'?'Бэкенд доступен':'Бэкенд отвечает с ошибкой.')+ver, d.ok?'ok':'warn');
+    if (d.version && parseFloat(d.version) < 2.3) {
+      setSt(`Бэкенд v${d.version} — нужен v2.3+. Обновите Code.gs и сделайте новое развертывание.`, 'warn');
+    }
+  }
   catch(e){ setSt('Ошибка связи: '+e.message,'err'); }
 }
 
 async function syncData() {
   try{
     setSt('Загрузка…','');
-    const [emp,meals]=await Promise.all([apiGet('listEmployees'),apiGet('listMeals',{limit:1000})]);
+    const [emp,meals]=await Promise.all([apiGet('listEmployees'),apiGet('listMeals',{limit:5000})]);
     state.employees=Array.isArray(emp)?emp:(emp.items||[]);
-    state.meals=Array.isArray(meals)?meals:(meals.items||[]);
-    renderAll(); setSt(`Данные обновлены: ${state.employees.length} сотр., ${state.meals.length} выдач.`,'ok');
+    const rawMeals=Array.isArray(meals)?meals:(meals.items||[]);
+    state.meals=normalizeMealsList(rawMeals);
+    if (!state.meals.length && rawMeals.length) {
+      setSt('Данные журнала в неверном формате. Обновите Code.gs на сервере (v2.3+) и сделайте новое развертывание.','err');
+    } else {
+      renderAll();
+      setSt(`Данные обновлены: ${state.employees.length} сотр., ${state.meals.length} выдач.`,'ok');
+    }
   }catch(e){ setSt('Ошибка загрузки: '+e.message,'err'); setKB('Нет связи с сервером. Проверьте URL Apps Script.','warn'); }
 }
 
 /* ── Face API ─────────────────────────────────────────────────── */
 
-async function loadImg(dataUrl){ return new Promise((res,rej)=>{ const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=rej; i.src=photoDisplayUrl(dataUrl)||dataUrl; }); }
+async function loadImg(dataUrl){
+  return new Promise((res,rej)=>{
+    const i=new Image();
+    const src=photoDisplayUrl(dataUrl)||dataUrl;
+    if (src.startsWith('data:')) i.crossOrigin='anonymous';
+    i.onload=()=>res(i);
+    i.onerror=rej;
+    i.src=src;
+  });
+}
 
 async function detectFace(src){ return faceapi.detectSingleFace(src,new faceapi.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:.5})).withFaceLandmarks().withFaceDescriptor(); }
 
@@ -1620,7 +1650,12 @@ async function init(){
   updSub();
   setUiMode('registrar');
   const today=todayStr();
-  els.filterDate.value=today; els.reportDateFrom.value=today; els.reportDateTo.value=today;
+  els.filterDate.value=today;
+  // Отчёт по умолчанию — последние 30 дней (не только сегодня)
+  const fromDate=new Date();
+  fromDate.setDate(fromDate.getDate()-30);
+  els.reportDateFrom.value=fromDate.toLocaleDateString('en-CA');
+  els.reportDateTo.value=today;
   renderAll();
   await loadRemoteSettings();
   if(needsSetup()){ showSetupWizard(); setSt('Заполните данные точки.','warn'); }

@@ -18,6 +18,11 @@
  * каких-либо ручных настроек URL в интерфейсе.
  *
  * ─────────────────────────────────────────────────────────────────
+ * ИСПРАВЛЕНИЯ v2.3:
+ *  8. listMeals: лист без строки заголовков (или с битыми заголовками) —
+ *     читаем по позициям колонок, отчёты и журнал снова работают.
+ *  9. getPhoto — прокси картинки с Drive для киоска.
+ * ─────────────────────────────────────────────────────────────────
  * ИСПРАВЛЕНИЯ v2.2:
  *  6. Фото: ссылки Google Drive (/view) нормализуются в uc?export=view;
  *     новые снимки (base64) загружаются в папку MealKioskPhotos на Drive.
@@ -86,7 +91,7 @@ function doGet(e) {
     var action = (e && e.parameter && e.parameter.action) || '';
     switch (action) {
       case 'ping':
-        return respond({ ok: true, message: 'pong', version: '2.2', cooldownMinutes: COOLDOWN_MINUTES });
+        return respond({ ok: true, message: 'pong', version: '2.3', cooldownMinutes: COOLDOWN_MINUTES });
       case 'listEmployees':
         return respond({ ok: true, items: listEmployees() });
       case 'listMeals':
@@ -139,9 +144,145 @@ function getOrCreateSheet_(name, headers) {
   // Это выполняется при каждом обращении к листу (дёшево и идемпотентно),
   // поэтому защищает и вновь создаваемые, и уже существующие листы.
   if (name === SHEET_MEALS) {
+    ensureMealsHeaderRow_(sheet, headers);
     ensureTextColumns_(sheet, headers, ['date', 'time']);
   }
   return sheet;
+}
+
+function ensureMealsHeaderRow_(sheet, headers) {
+  var data = sheet.getDataRange().getValues();
+  if (!data.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  // Если шапки нет, но данные уже есть — не вставляем строку (legacy-порядок
+  // колонок). Читаем через readMealRows_(). Починка: repairMealsSheet().
+}
+
+function isMealsHeaderRow_(row) {
+  if (!row || !row.length) return false;
+  if (String(row[0]) === 'mealId') return true;
+  var joined = row.map(String).join('|');
+  return joined.indexOf('mealId') >= 0 && joined.indexOf('employeeName') >= 0;
+}
+
+function isUuid_(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || '').trim());
+}
+
+function detectMealsLayout_(row) {
+  if (!row || !row.length) return 'standard';
+  // Старый лист: matchScore в первой колонке, mealId во второй.
+  if (typeof row[0] === 'number' && isUuid_(row[1])) return 'matchScoreFirst';
+  if (isUuid_(row[0])) return 'standard';
+  return 'standard';
+}
+
+function normalizeDateCell_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  var s = String(v || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return s;
+}
+
+function normalizeTimeCell_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm:ss');
+  }
+  return String(v || '').trim();
+}
+
+function mapMealRow_(row, layout) {
+  var obj = {};
+  if (layout === 'matchScoreFirst') {
+    obj.matchScore = row[0];
+    obj.mealId = row[1];
+    obj.timestamp = row[2];
+    obj.date = normalizeDateCell_(row[3]);
+    obj.time = normalizeTimeCell_(row[4]);
+    obj.employeeId = row[5];
+    obj.employeeName = row[6];
+    obj.staffId = row[7];
+    obj.department = row[8];
+    obj.mealType = row[9];
+    obj.extraMeal = row[10];
+    obj.siteName = row[11];
+    obj.operator = row[12];
+    obj.verified = row[13];
+    obj.note = row[14];
+    obj.photo = row[15] || '';
+  } else {
+    obj.mealId = row[0];
+    obj.timestamp = row[1];
+    obj.date = normalizeDateCell_(row[2]);
+    obj.time = normalizeTimeCell_(row[3]);
+    obj.employeeId = row[4];
+    obj.employeeName = row[5];
+    obj.staffId = row[6];
+    obj.department = row[7];
+    obj.mealType = row[8];
+    obj.extraMeal = row.length > 9 ? row[9] : false;
+    obj.siteName = row.length > 10 ? row[10] : '';
+    obj.operator = row.length > 11 ? row[11] : '';
+    obj.matchScore = row.length > 12 ? row[12] : '';
+    obj.photo = row.length > 13 ? row[13] : '';
+    obj.verified = row.length > 14 ? row[14] : true;
+    obj.note = row.length > 15 ? row[15] : '';
+  }
+
+  if (!obj.date && obj.timestamp) {
+    var ts = new Date(obj.timestamp);
+    if (!isNaN(ts.getTime())) {
+      obj.date = Utilities.formatDate(ts, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+  }
+  if (obj.photo) obj.photo = normalizePhotoUrl_(obj.photo);
+  return obj;
+}
+
+function readMealRows_(sheet) {
+  var data = sheet.getDataRange().getValues();
+  if (!data.length) return [];
+
+  var startIdx = 0;
+  if (isMealsHeaderRow_(data[0])) {
+    startIdx = 1;
+  }
+
+  var sample = data[startIdx];
+  if (!sample) return [];
+  var layout = detectMealsLayout_(sample);
+
+  var rows = [];
+  for (var i = startIdx; i < data.length; i++) {
+    var row = data[i];
+    if (!row.some(function(cell) { return cell !== '' && cell !== null; })) continue;
+    rows.push(mapMealRow_(row, layout));
+  }
+  return rows;
+}
+
+/**
+ * ОДНОРАЗОВО: добавить строку заголовков на лист Meals (если её нет).
+ * Запустите вручную из редактора Apps Script после обновления кода.
+ */
+function repairMealsSheet() {
+  var sheet = getOrCreateSheet_(SHEET_MEALS, MEAL_HEADERS);
+  var data = sheet.getDataRange().getValues();
+  if (data.length && isMealsHeaderRow_(data[0])) {
+    Logger.log('Шапка уже есть.');
+    return;
+  }
+  sheet.insertRowBefore(1);
+  sheet.getRange(1, 1, 1, MEAL_HEADERS.length).setValues([MEAL_HEADERS]);
+  sheet.getRange(1, 1, 1, MEAL_HEADERS.length).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  ensureTextColumns_(sheet, MEAL_HEADERS, ['date', 'time']);
+  Logger.log('Строка заголовков добавлена. Проверьте порядок колонок вручную при необходимости.');
 }
 
 function ensureTextColumns_(sheet, headers, colNames) {
@@ -212,7 +353,7 @@ function listEmployees() {
 
 function listMeals(limit) {
   var sheet = getOrCreateSheet_(SHEET_MEALS, MEAL_HEADERS);
-  var items = sheetToObjects_(sheet);
+  var items = readMealRows_(sheet);
   items.sort(function(a, b) {
     return String(b.timestamp || '').localeCompare(String(a.timestamp || ''));
   });
@@ -285,7 +426,7 @@ function saveMeal(body) {
 
   try {
     var sheet = getOrCreateSheet_(SHEET_MEALS, MEAL_HEADERS);
-    var meals = sheetToObjects_(sheet);
+    var meals = readMealRows_(sheet);
     var now = new Date();
     var nowMs = now.getTime();
     var cooldownMs = COOLDOWN_MINUTES * 60 * 1000;
@@ -427,7 +568,7 @@ function extractDriveFileId_(url) {
 }
 
 function driveImageUrl_(fileId) {
-  return 'https://drive.google.com/uc?export=view&id=' + fileId;
+  return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w400';
 }
 
 function normalizePhotoUrl_(photo) {
