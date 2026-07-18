@@ -1,4 +1,5 @@
-* Питание Персонала — бэкенд на Google Apps Script
+/**
+ * Питание Персонала — бэкенд на Google Apps Script
  *
  * Установка (один раз):
  *  1. Создайте новую Google Таблицу.
@@ -15,15 +16,44 @@
  *
  * После этого приложение всегда работает с этим бэкендом без
  * каких-либо ручных настроек URL в интерфейсе.
+ *
+ * ─────────────────────────────────────────────────────────────────
+ * ИСПРАВЛЕНИЯ v2.1:
+ *  1. Колонки date/time листа Meals принудительно форматируются как
+ *     ОБЫЧНЫЙ ТЕКСТ ('@') перед каждой записью. Раньше Google Sheets
+ *     автоматически распознавал строку "2026-07-18" как дату и
+ *     конвертировал ячейку в тип Date. При чтении через getValues()
+ *     это превращалось в JS Date-объект и сериализовалось в JSON как
+ *     полноценный ISO-timestamp (например "2026-07-18T00:00:00.000Z"),
+ *     из-за чего фронтенд при СТРОКОВОМ сравнении дат в отчётах и
+ *     журнале терял часть (а иногда и все) строки. Теперь date/time
+ *     остаются простыми текстовыми строками "YYYY-MM-DD"/"HH:mm:ss".
+ *  2. Добавлена колонка extraMeal в лист Meals (раньше фронт её
+ *     отправлял, а бэкенд тихо отбрасывал, т.к. её не было в
+ *     MEAL_HEADERS).
+ *  3. Доп. питание (extraMeal=true) больше не блокируется общим
+ *     cooldown между обычными приёмами пищи.
+ *  4. Добавлены action=saveSettings/getSettings (лист Settings) —
+ *     фронтенд их уже вызывает (сохранение названия точки/оператора
+ *     на сервере), но в исходном Code.gs обработчиков не было, и
+ *     запросы просто падали с "Неизвестное действие".
+ *  5. Если у вас уже есть данные, накопленные СТАРОЙ версией скрипта
+ *     (колонка date уже "испорчена" как тип Date) — запустите один
+ *     раз вручную функцию fixMealsDateColumn() из редактора Apps
+ *     Script, она пересчитает date/time из timestamp и переформатирует
+ *     колонки в текст.
+ * ─────────────────────────────────────────────────────────────────
  */
 
 var SHEET_EMPLOYEES = 'Employees';
 var SHEET_MEALS     = 'Meals';
 var SHEET_LOGS      = 'Logs';
+var SHEET_SETTINGS  = 'Settings';
 
-// Минимальный интервал между двумя выдачами питания одному
+// Минимальный интервал между двумя выдачами ОБЫЧНОГО питания одному
 // сотруднику (минуты). Защищает от повторного получения
-// независимо от того, Завтрак/Обед/Ужин.
+// независимо от того, Завтрак/Обед/Ужин. НЕ применяется к
+// доп. питанию (extraMeal=true) — см. saveMeal().
 var COOLDOWN_MINUTES = 60;
 
 var EMPLOYEE_HEADERS = [
@@ -31,9 +61,10 @@ var EMPLOYEE_HEADERS = [
   'photo', 'faceDescriptor', 'active', 'createdAt', 'updatedAt'
 ];
 
+// Добавлена колонка 'extraMeal' (была потеряна в исходной версии).
 var MEAL_HEADERS = [
   'mealId', 'timestamp', 'date', 'time', 'employeeId', 'employeeName',
-  'staffId', 'department', 'mealType', 'siteName', 'operator',
+  'staffId', 'department', 'mealType', 'extraMeal', 'siteName', 'operator',
   'matchScore', 'photo', 'verified', 'note'
 ];
 
@@ -42,16 +73,20 @@ var LOG_HEADERS = [
   'status', 'message', 'photo', 'matchScore'
 ];
 
+var SETTINGS_HEADERS = ['key', 'value', 'updatedAt'];
+
 function doGet(e) {
   try {
     var action = (e && e.parameter && e.parameter.action) || '';
     switch (action) {
       case 'ping':
-        return respond({ ok: true, message: 'pong', version: '2.0', cooldownMinutes: COOLDOWN_MINUTES });
+        return respond({ ok: true, message: 'pong', version: '2.1', cooldownMinutes: COOLDOWN_MINUTES });
       case 'listEmployees':
         return respond({ ok: true, items: listEmployees() });
       case 'listMeals':
         return respond({ ok: true, items: listMeals(Number(e.parameter.limit) || 500) });
+      case 'getSettings':
+        return respond({ ok: true, settings: getSettings() });
       default:
         return respond({ ok: false, status: 'error', message: 'Неизвестное действие: ' + action });
     }
@@ -68,6 +103,7 @@ function doPost(e) {
       case 'saveEmployee': return respond(saveEmployee(body));
       case 'saveMeal':     return respond(saveMeal(body));
       case 'logEvent':     return respond(logEvent(body));
+      case 'saveSettings': return respond(saveSettings(body));
       default:
         return respond({ ok: false, status: 'error', message: 'Неизвестное действие: ' + action });
     }
@@ -92,7 +128,26 @@ function getOrCreateSheet_(name, headers) {
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
     sheet.setFrozenRows(1);
   }
+  // Для листа Meals принудительно держим колонки date/time текстовыми,
+  // чтобы Google Sheets не авто-конвертировал их в тип Date при записи.
+  // Это выполняется при каждом обращении к листу (дёшево и идемпотентно),
+  // поэтому защищает и вновь создаваемые, и уже существующие листы.
+  if (name === SHEET_MEALS) {
+    ensureTextColumns_(sheet, headers, ['date', 'time']);
+  }
   return sheet;
+}
+
+function ensureTextColumns_(sheet, headers, colNames) {
+  var maxRows = Math.max(sheet.getMaxRows(), 2);
+  colNames.forEach(function (colName) {
+    var idx = headers.indexOf(colName);
+    if (idx < 0) return;
+    var range = sheet.getRange(2, idx + 1, maxRows - 1, 1);
+    if (range.getNumberFormat() !== '@') {
+      range.setNumberFormat('@');
+    }
+  });
 }
 
 function sheetToObjects_(sheet) {
@@ -104,10 +159,21 @@ function sheetToObjects_(sheet) {
     var row = data[i];
     if (!row.some(function(cell) { return cell !== '' && cell !== null; })) continue;
     var obj = {};
-    for (var j = 0; j < headers.length; j++) obj[headers[j]] = row[j];
+    for (var j = 0; j < headers.length; j++) obj[headers[j]] = normalizeCell_(row[j]);
     rows.push(obj);
   }
   return rows;
+}
+
+// Если ячейка всё же оказалась типом Date (например, старые строки,
+// записанные до применения текстового формата колонки), приводим её
+// к строке "YYYY-MM-DD" вместо полного ISO-timestamp с "T", чтобы не
+// ломать сравнения на фронтенде.
+function normalizeCell_(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return v;
 }
 
 function findRowById_(sheet, idCol, id) {
@@ -188,12 +254,18 @@ function saveEmployee(body) {
 /**
  * Регистрация выдачи питания.
  * Сервер — последняя линия защиты: даже если клиент обойдёт UI,
- * выдача чаще чем раз в COOLDOWN_MINUTES будет отклонена.
+ * выдача чаще чем раз в COOLDOWN_MINUTES будет отклонена — но ТОЛЬКО
+ * для обычного питания (завтрак/обед/ужин). Доп. питание
+ * (body.extraMeal === true) не подчиняется этому кулдауну: это
+ * отдельная позиция (перекус, кефир и т.п.), которую можно выдавать
+ * независимо от основного приёма пищи.
  */
 function saveMeal(body) {
   if (!body || !body.employeeId || !body.mealType) {
     return { ok: false, status: 'error', message: 'Неполные данные для регистрации питания' };
   }
+
+  var isExtra = body.extraMeal === true || String(body.extraMeal).toLowerCase() === 'true';
 
   // Глобальная блокировка — нельзя одновременно записывать
   // две выдачи (защищает от двойного нажатия).
@@ -209,31 +281,36 @@ function saveMeal(body) {
     var nowMs = now.getTime();
     var cooldownMs = COOLDOWN_MINUTES * 60 * 1000;
 
-    // Ищем последнюю выдачу этому сотруднику.
-    var lastTs = 0, lastMeal = null;
-    for (var i = 0; i < meals.length; i++) {
-      if (String(meals[i].employeeId) !== String(body.employeeId)) continue;
-      var t = Date.parse(meals[i].timestamp);
-      if (!isNaN(t) && t > lastTs) { lastTs = t; lastMeal = meals[i]; }
-    }
+    if (!isExtra) {
+      // Ищем последнюю ОБЫЧНУЮ выдачу этому сотруднику (доп. питание
+      // в расчёт cooldown не берём и им не блокируем).
+      var lastTs = 0, lastMeal = null;
+      for (var i = 0; i < meals.length; i++) {
+        if (String(meals[i].employeeId) !== String(body.employeeId)) continue;
+        var rowIsExtra = meals[i].extraMeal === true || String(meals[i].extraMeal).toLowerCase() === 'true' || meals[i].mealType === 'Доп. питание';
+        if (rowIsExtra) continue;
+        var t = Date.parse(meals[i].timestamp);
+        if (!isNaN(t) && t > lastTs) { lastTs = t; lastMeal = meals[i]; }
+      }
 
-    if (lastTs && (nowMs - lastTs) < cooldownMs) {
-      var leftMin = Math.ceil((cooldownMs - (nowMs - lastTs)) / 60000);
-      logEvent_({
-        type: 'meal_blocked',
-        employeeId: body.employeeId,
-        employeeName: body.employeeName || '',
-        status: 'blocked',
-        message: 'Повторная попытка через ' + Math.round((nowMs - lastTs) / 60000) + ' мин (последний: ' + (lastMeal && lastMeal.mealType) + ')'
-      });
-      return {
-        ok: false,
-        status: 'cooldown',
-        message: 'Питание уже выдано (' + (lastMeal && lastMeal.mealType) + '). Следующая выдача через ' + leftMin + ' мин.',
-        minutesLeft: leftMin,
-        lastMealType: lastMeal && lastMeal.mealType,
-        lastTimestamp: lastMeal && lastMeal.timestamp
-      };
+      if (lastTs && (nowMs - lastTs) < cooldownMs) {
+        var leftMin = Math.ceil((cooldownMs - (nowMs - lastTs)) / 60000);
+        logEvent_({
+          type: 'meal_blocked',
+          employeeId: body.employeeId,
+          employeeName: body.employeeName || '',
+          status: 'blocked',
+          message: 'Повторная попытка через ' + Math.round((nowMs - lastTs) / 60000) + ' мин (последний: ' + (lastMeal && lastMeal.mealType) + ')'
+        });
+        return {
+          ok: false,
+          status: 'cooldown',
+          message: 'Питание уже выдано (' + (lastMeal && lastMeal.mealType) + '). Следующая выдача через ' + leftMin + ' мин.',
+          minutesLeft: leftMin,
+          lastMealType: lastMeal && lastMeal.mealType,
+          lastTimestamp: lastMeal && lastMeal.timestamp
+        };
+      }
     }
 
     var record = {
@@ -246,6 +323,7 @@ function saveMeal(body) {
       staffId: body.staffId || '',
       department: body.department || '',
       mealType: body.mealType,
+      extraMeal: isExtra,
       siteName: body.siteName || '',
       operator: body.operator || '',
       matchScore: body.matchScore !== undefined ? body.matchScore : '',
@@ -254,13 +332,15 @@ function saveMeal(body) {
       note: body.note || ''
     };
 
+    // Колонки date/time уже отформатированы как текст в getOrCreateSheet_,
+    // поэтому appendRow не даст Google Sheets конвертировать их в Date.
     sheet.appendRow(objectToRow_(MEAL_HEADERS, record));
 
     logEvent_({
       type: 'meal',
       employeeId: record.employeeId, employeeName: record.employeeName,
       status: 'ok',
-      message: record.mealType + ' зарегистрирован',
+      message: record.mealType + (isExtra ? ' (доп.)' : '') + ' зарегистрирован',
       photo: record.photo,
       matchScore: record.matchScore
     });
@@ -290,6 +370,40 @@ function logEvent_(body) {
   } catch (e) { /* журнал не должен ломать основной поток */ }
 }
 
+/**
+ * Настройки точки (название точки/оператор), хранятся как пары
+ * key/value на листе Settings, чтобы не терялись при очистке
+ * localStorage браузера.
+ */
+function getSettings() {
+  var sheet = getOrCreateSheet_(SHEET_SETTINGS, SETTINGS_HEADERS);
+  var rows = sheetToObjects_(sheet);
+  var out = {};
+  rows.forEach(function (r) { out[r.key] = r.value; });
+  return out;
+}
+
+function saveSettings(body) {
+  if (!body) return { ok: false, status: 'error', message: 'Нет данных' };
+  var sheet = getOrCreateSheet_(SHEET_SETTINGS, SETTINGS_HEADERS);
+  var now = nowIso_();
+  var toSave = {};
+  if (body.siteName !== undefined) toSave.siteName = body.siteName;
+  if (body.operator !== undefined) toSave.operator = body.operator;
+
+  Object.keys(toSave).forEach(function (key) {
+    var rowNum = findRowById_(sheet, 'key', key);
+    var row = objectToRow_(SETTINGS_HEADERS, { key: key, value: toSave[key], updatedAt: now });
+    if (rowNum) {
+      sheet.getRange(rowNum, 1, 1, SETTINGS_HEADERS.length).setValues([row]);
+    } else {
+      sheet.appendRow(row);
+    }
+  });
+
+  return { ok: true, settings: getSettings() };
+}
+
 function truncatePhoto_(photo) {
   if (!photo) return '';
   var s = String(photo);
@@ -301,5 +415,55 @@ function setupSheets() {
   getOrCreateSheet_(SHEET_EMPLOYEES, EMPLOYEE_HEADERS);
   getOrCreateSheet_(SHEET_MEALS,     MEAL_HEADERS);
   getOrCreateSheet_(SHEET_LOGS,      LOG_HEADERS);
-  Logger.log('Готово: листы Employees, Meals, Logs созданы.');
+  getOrCreateSheet_(SHEET_SETTINGS,  SETTINGS_HEADERS);
+  Logger.log('Готово: листы Employees, Meals, Logs, Settings созданы.');
+}
+
+/**
+ * ОДНОРАЗОВЫЙ РЕМОНТ для тех, у кого уже есть данные, накопленные
+ * СТАРОЙ версией скрипта (когда колонка date хранилась как тип Date
+ * из-за авто-конвертации Google Sheets).
+ *
+ * Запустите вручную ОДИН РАЗ из редактора Apps Script (выберите
+ * fixMealsDateColumn в выпадающем списке функций и нажмите ▶).
+ * Скрипт пересчитает столбцы date/time из timestamp для всех
+ * существующих строк и переформатирует сами колонки в текстовый
+ * формат, чтобы проблема не повторялась.
+ */
+function fixMealsDateColumn() {
+  var sheet = getOrCreateSheet_(SHEET_MEALS, MEAL_HEADERS); // заодно проставит текстовый формат
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) { Logger.log('Нет данных для исправления.'); return; }
+
+  var headers = data[0].map(String);
+  var tsCol   = headers.indexOf('timestamp');
+  var dateCol = headers.indexOf('date');
+  var timeCol = headers.indexOf('time');
+  if (tsCol < 0 || dateCol < 0 || timeCol < 0) {
+    Logger.log('Не найдены нужные колонки.');
+    return;
+  }
+
+  var tz = Session.getScriptTimeZone();
+  var fixed = 0;
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var ts = row[tsCol];
+    var d;
+    if (Object.prototype.toString.call(ts) === '[object Date]') {
+      d = ts;
+    } else if (ts) {
+      var parsed = new Date(ts);
+      if (!isNaN(parsed.getTime())) d = parsed;
+    }
+    if (!d) continue;
+
+    var dateStr = Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+    var timeStr = Utilities.formatDate(d, tz, 'HH:mm:ss');
+
+    sheet.getRange(i + 1, dateCol + 1).setValue(dateStr);
+    sheet.getRange(i + 1, timeCol + 1).setValue(timeStr);
+    fixed++;
+  }
+  Logger.log('Исправлено строк: ' + fixed);
 }
