@@ -409,7 +409,15 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 
 <script>
 /* =================================================================
-   Питание Персонала v3.0 — клиентская часть
+   Питание Персонала v3.1 — клиентская часть
+   Изменения v3.1 (исправления):
+     - ИСПРАВЛЕНО: отчёты и журнал больше не фильтруются по "битой"
+       колонке date (Google Sheets авто-конвертирует текстовые даты
+       в тип Date, из-за чего строковое сравнение ломалось). Теперь
+       везде дата берётся из timestamp (ISO-строка), который Sheets
+       не трогает.
+     - ИСПРАВЛЕНО: поле extraMeal реально передаётся и используется
+       для освобождения доп. питания от cooldown на сервере.
    Изменения v3.0:
      1. Спиннер-блокировка кнопки при двойном клике (debounce)
      2. Фильтр отчёта по ФИО сотрудника
@@ -555,6 +563,20 @@ function fmtDate(s) {
   if(!s||s.length<10) return s||'';
   const [y,mo,d] = s.slice(0,10).split('-');
   return `${d}.${mo}.${y}`;
+}
+
+// ЕДИНАЯ функция получения "даты выдачи" (YYYY-MM-DD) для записи журнала.
+// ВАЖНО: намеренно берём дату из timestamp (ISO-строка с "T"), а НЕ из
+// поля date. Поле date в Google Sheets авто-конвертируется в тип Date при
+// записи текстовой строки вида "2026-07-18" (это дефолтное поведение
+// таблиц), и после сериализации в JSON превращается в полноценный ISO-
+// timestamp вроде "2026-07-18T00:00:00.000Z" (возможно, ещё и со сдвигом
+// на сутки из-за часового пояса). Строковое сравнение такой "даты" с
+// обычной "YYYY-MM-DD" ломает все фильтры по датам. timestamp пишется
+// как ISO-строка с буквой "T" и Google Sheets её не трогает — поэтому
+// он надёжен.
+function rowDateStr(r) {
+  return String(r.timestamp||'').slice(0,10);
 }
 
 function badgeClass(meal,isExtra) {
@@ -845,7 +867,7 @@ function filteredMeals() {
   const meal = els.filterMeal.value; // может быть 'extra'
   return [...state.meals].filter(r=>{
     const okTxt  = !txt  || [r.employeeName,r.staffId,r.department].join(' ').toLowerCase().includes(txt);
-    const okDate = !date || String(r.date||(r.timestamp||'').slice(0,10))===date;
+    const okDate = !date || rowDateStr(r)===date;
     const okMeal = !meal ||
       (meal==='extra'
         ? isExtraRow(r)  // isExtraRow уже проверяет и флаг и mealType
@@ -886,7 +908,7 @@ function getReportRows() {
   const empTxt  = els.reportEmp.value.trim().toLowerCase();
 
   return [...state.meals].filter(r=>{
-    const d = String(r.date||(r.timestamp||'').slice(0,10));
+    const d = rowDateStr(r);
     return (!from||d>=from) && (!to||d<=to) &&
       (!deptTxt||String(r.department||'').toLowerCase().includes(deptTxt)) &&
       // Фильтр по ФИО — ищем вхождение подстроки
@@ -988,7 +1010,7 @@ function buildDayReport(rows) {
   // Группируем по дате
   const byDay = {};
   rows.forEach(r=>{
-    const d = String(r.date||(r.timestamp||'').slice(0,10));
+    const d = rowDateStr(r);
     if(!byDay[d]) byDay[d]=[];
     byDay[d].push(r);
   });
@@ -1084,7 +1106,7 @@ function exportReportXlsx() {
   } else {
     // По дням: каждый день — отдельный лист (до 31 листа)
     const byDay = {};
-    rows.forEach(r=>{ const d=String(r.date||(r.timestamp||'').slice(0,10)); if(!byDay[d])byDay[d]=[]; byDay[d].push(r); });
+    rows.forEach(r=>{ const d=rowDateStr(r); if(!byDay[d])byDay[d]=[]; byDay[d].push(r); });
     const sheets = Object.keys(byDay).sort().map(date=>{
       const emps = aggregateByEmployee(byDay[date]);
       const headers = ['ФИО','Подразделение','Таб. №','Завтраков','Обедов','Ужинов','Доп.','Сумма (₸)'];
@@ -1099,7 +1121,7 @@ function exportJournalXlsx() {
   const rows = filteredMeals();
   const headers = ['Дата','Время','ФИО','Таб. №','Подразделение','Тип питания','Доп. порция','Описание','Точка','Оператор'];
   const data = rows.map(r=>[
-    String(r.date||''),
+    rowDateStr(r),
     String(r.time||(r.timestamp?new Date(r.timestamp).toLocaleTimeString('ru-RU'):'')),
     r.employeeName||'', r.staffId||'', r.department||'',
     isExtraRow(r)?'Доп.':r.mealType||'',
@@ -1114,7 +1136,7 @@ function exportJournalXlsx() {
 function exportCSV() {
   const rows=filteredMeals();
   const hdr=['Дата','Время','ФИО','ID','Подразделение','Тип питания','Доп.','Описание','Точка','Оператор'];
-  const data=rows.map(r=>[String(r.date||''),String(r.time||(r.timestamp?new Date(r.timestamp).toLocaleTimeString('ru-RU'):'')),r.employeeName||'',r.staffId||'',r.department||'',isExtraRow(r)?'Доп.':r.mealType||'',isExtraRow(r)?'Да':'Нет',(r.note&&r.note!=='face_verified')?r.note:'',r.siteName||'',r.operator||'']);
+  const data=rows.map(r=>[rowDateStr(r),String(r.time||(r.timestamp?new Date(r.timestamp).toLocaleTimeString('ru-RU'):'')),r.employeeName||'',r.staffId||'',r.department||'',isExtraRow(r)?'Доп.':r.mealType||'',isExtraRow(r)?'Да':'Нет',(r.note&&r.note!=='face_verified')?r.note:'',r.siteName||'',r.operator||'']);
   const blob=new Blob(['\uFEFF',[hdr,...data].map(r=>r.map(csvEsc).join(';')).join('\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`журнал-${todayStr()}.csv`;a.click();
 }
@@ -1297,7 +1319,7 @@ async function doSaveMeal(mealType, isExtra, note) {
     staffId:      emp.staffId||'',
     department:   emp.department||'',
     mealType:     mealType,
-    extraMeal:    isExtra,
+    extraMeal:    !!isExtra,
     siteName:     els.siteName.value.trim(),
     operator:     els.operatorName.value.trim(),
     matchScore:   state.matchScore,
@@ -1308,7 +1330,13 @@ async function doSaveMeal(mealType, isExtra, note) {
 
   try{
     const data = await apiPost('saveMeal', payload);
-    if(data.ok===false||data.status==='error'){ setKB(data.message||'Ошибка сохранения.','err'); _mealBusy=false; updateMealButton(); els.extraMealBtn.disabled=false; return; }
+    if(data.ok===false||data.status==='error'){
+      // Отдельно показываем понятное сообщение при cooldown (сервер это
+      // различает через status:'cooldown'), чтобы не путать с реальной ошибкой
+      const msg = data.status==='cooldown' ? (data.message||'Питание уже выдано, подождите.') : (data.message||'Ошибка сохранения.');
+      setKB(msg, data.status==='cooldown' ? 'warn' : 'err');
+      _mealBusy=false; updateMealButton(); els.extraMealBtn.disabled=false; return;
+    }
     setKB('Приятного аппетита, '+emp.fullName+'!','ok');
     showAppetitePopup(emp.fullName, mealType, isExtra, note);
     await syncData();
